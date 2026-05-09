@@ -398,6 +398,16 @@ def seed_hot_leads(session):
         },
     ]
 
+    # Fix any remaining placeholder addresses not in SF
+    manual_fixes = {
+        "HHD-CV-25-6210488-S": {"address": "260 Terry Road Hartford, CT 06105"},
+    }
+    for docket, fix in manual_fixes.items():
+        case = Case.query.filter_by(docket_number=docket).first()
+        if case and "Property" in (case.address or ""):
+            case.address = fix["address"]
+            print(f"  Fixed placeholder: {docket} → {fix['address']}")
+
     created = 0
     for lead in leads:
         existing = Case.query.filter_by(docket_number=lead["docket"]).first()
