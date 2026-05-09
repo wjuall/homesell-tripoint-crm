@@ -191,6 +191,11 @@ def run_selective_import(session, sf_dir="sf_export"):
                 existing.sf_case_id = sf_case_id
             if sale_date_str and not existing.sale_date:
                 existing.sale_date = parse_date(sale_date_str)
+            # Fix placeholder addresses (e.g. "East Haddam Property")
+            if address and existing.address and "Property" in existing.address and not any(c.isdigit() for c in existing.address):
+                existing.address = address
+            if not existing.sf_account_id and account_id:
+                existing.sf_account_id = account_id
             case_by_account[account_id] = existing.id
             opp_to_case[row.get("Id")] = existing.id
             continue
