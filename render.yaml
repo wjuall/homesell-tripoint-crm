@@ -1,0 +1,22 @@
+databases:
+  - name: tripoint-crm-db
+    plan: free
+    databaseName: tripoint_crm
+    user: tripoint
+
+services:
+  - type: web
+    name: tripoint-crm
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tripoint-crm-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.11.0

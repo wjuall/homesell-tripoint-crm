@@ -1,0 +1,552 @@
+"""
+TriPoint CRM — Foreclosure Pipeline & Transaction Management
+"""
+import os
+from datetime import datetime, date, timedelta
+from functools import wraps
+
+from flask import (
+    Flask, render_template, request, redirect, url_for, flash,
+    jsonify, abort,
+)
+from flask_login import (
+    LoginManager, login_user, logout_user, login_required, current_user,
+)
+from config import Config
+from models import db, User, Case, Contact, Transaction, Activity
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+db.init_app(app)
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message_category = "info"
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role != "admin":
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+PIPELINE_STATUSES = [
+    "New Case", "In Mediation", "Mediation Failed", "Motion for Foreclosure",
+    "Judgment of Foreclosure", "Sale Date Set", "Sale Date Extended",
+    "Bankruptcy Stay Lifted", "In Bankruptcy", "Judgment Vacated",
+    "Trial Date Set", "Surplus Funds", "On Hold",
+]
+
+TRANSACTION_STAGES = [
+    "New", "Working", "Long Term Follow Up", "Appointment Set",
+    "Offer Made", "Follow Up on Offer", "Contract Signed",
+    "Under Construction", "Active Listing", "Sent to Attorneys",
+    "Closed Won", "Closed Lost", "Revert",
+]
+
+RESPONSE_LABELS = {
+    "interested": ("Interested", "success"),
+    "needs_help": ("Needs Help", "warning"),
+    "not_interested": ("Not Interested", "secondary"),
+    "stop": ("DNC/Stop", "danger"),
+    "wrong_number": ("Wrong Number", "dark"),
+    "deceased": ("Deceased", "dark"),
+    None: ("No Response", "light"),
+    "": ("No Response", "light"),
+}
+
+
+@app.context_processor
+def inject_globals():
+    return {
+        "now": datetime.utcnow(),
+        "pipeline_statuses": PIPELINE_STATUSES,
+        "transaction_stages": TRANSACTION_STAGES,
+        "response_labels": RESPONSE_LABELS,
+    }
+
+
+# ── Auth ─────────────────────────────────────────────────────────────────────
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        user = User.query.filter_by(email=email).first()
+        if user and user.check_password(password):
+            login_user(user, remember=True)
+            next_page = request.args.get("next")
+            return redirect(next_page or url_for("dashboard"))
+        flash("Invalid email or password.", "danger")
+    return render_template("login.html")
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
+
+
+# ── Dashboard ────────────────────────────────────────────────────────────────
+
+@app.route("/")
+@login_required
+def dashboard():
+    # Pipeline summary
+    pipeline_counts = {}
+    for status in PIPELINE_STATUSES:
+        pipeline_counts[status] = Case.query.filter_by(status=status).filter(
+            Case.date_closed.is_(None)
+        ).count()
+
+    total_active = sum(pipeline_counts.values())
+    closed_count = Case.query.filter(Case.date_closed.isnot(None)).count()
+
+    # Hot leads
+    hot_leads = Contact.query.filter(
+        Contact.response_status.in_(["interested", "needs_help"])
+    ).filter_by(dnc=False).order_by(Contact.date_added.desc()).limit(10).all()
+
+    # Recent activity
+    recent = Activity.query.order_by(Activity.activity_date.desc()).limit(15).all()
+
+    # Active transactions
+    active_txns = Transaction.query.filter_by(is_closed=False).order_by(
+        Transaction.updated_at.desc()
+    ).limit(10).all()
+
+    # Upcoming sale dates
+    upcoming_sales = Case.query.filter(
+        Case.sale_date >= date.today(),
+        Case.date_closed.is_(None),
+    ).order_by(Case.sale_date).limit(10).all()
+
+    return render_template(
+        "dashboard.html",
+        pipeline_counts=pipeline_counts,
+        total_active=total_active,
+        closed_count=closed_count,
+        hot_leads=hot_leads,
+        recent=recent,
+        active_txns=active_txns,
+        upcoming_sales=upcoming_sales,
+    )
+
+
+# ── Pipeline ─────────────────────────────────────────────────────────────────
+
+@app.route("/pipeline")
+@login_required
+def pipeline():
+    status_filter = request.args.get("status", "")
+    town_filter = request.args.get("town", "")
+    search = request.args.get("q", "")
+    page = request.args.get("page", 1, type=int)
+
+    query = Case.query.filter(Case.date_closed.is_(None))
+
+    if status_filter:
+        query = query.filter_by(status=status_filter)
+    if town_filter:
+        query = query.filter_by(town=town_filter)
+    if search:
+        query = query.filter(
+            db.or_(
+                Case.address.ilike(f"%{search}%"),
+                Case.docket_number.ilike(f"%{search}%"),
+                Case.town.ilike(f"%{search}%"),
+            )
+        )
+
+    query = query.order_by(Case.sale_date.asc().nullslast(), Case.status_date.desc())
+    cases = query.paginate(page=page, per_page=50, error_out=False)
+
+    # Get distinct towns for filter
+    towns = db.session.query(Case.town).filter(
+        Case.date_closed.is_(None), Case.town.isnot(None)
+    ).distinct().order_by(Case.town).all()
+    towns = [t[0] for t in towns if t[0]]
+
+    # Pipeline counts for sidebar
+    pipeline_counts = {}
+    for status in PIPELINE_STATUSES:
+        pipeline_counts[status] = Case.query.filter_by(status=status).filter(
+            Case.date_closed.is_(None)
+        ).count()
+
+    return render_template(
+        "pipeline.html",
+        cases=cases,
+        towns=towns,
+        pipeline_counts=pipeline_counts,
+        status_filter=status_filter,
+        town_filter=town_filter,
+        search=search,
+    )
+
+
+@app.route("/case/<int:case_id>")
+@login_required
+def case_detail(case_id):
+    case = db.session.get(Case, case_id) or abort(404)
+    contacts = Contact.query.filter_by(case_id=case.id).all()
+    activities = Activity.query.filter_by(case_id=case.id).order_by(
+        Activity.activity_date.desc()
+    ).limit(50).all()
+    transactions = Transaction.query.filter_by(case_id=case.id).all()
+    return render_template(
+        "case_detail.html", case=case, contacts=contacts,
+        activities=activities, transactions=transactions,
+    )
+
+
+@app.route("/case/<int:case_id>/update-status", methods=["POST"])
+@login_required
+def update_case_status(case_id):
+    case = db.session.get(Case, case_id) or abort(404)
+    new_status = request.form.get("status")
+    if new_status and new_status != case.status:
+        old = case.status
+        case.status = new_status
+        case.status_date = date.today()
+        if new_status in ("Closed Won", "Closed Lost", "Dismissed"):
+            case.date_closed = date.today()
+        act = Activity(
+            case_id=case.id, activity_type="note",
+            subject=f"Status changed: {old} → {new_status}",
+            created_by_id=current_user.id,
+        )
+        db.session.add(act)
+        db.session.commit()
+        flash(f"Status updated to {new_status}.", "success")
+    return redirect(url_for("case_detail", case_id=case.id))
+
+
+# ── Contacts ─────────────────────────────────────────────────────────────────
+
+@app.route("/contacts")
+@login_required
+def contacts_list():
+    page = request.args.get("page", 1, type=int)
+    search = request.args.get("q", "")
+    status_filter = request.args.get("status", "")
+
+    query = Contact.query
+    if search:
+        query = query.filter(
+            db.or_(
+                Contact.name.ilike(f"%{search}%"),
+                Contact.primary_phone.ilike(f"%{search}%"),
+                Contact.email.ilike(f"%{search}%"),
+            )
+        )
+    if status_filter:
+        query = query.filter_by(response_status=status_filter)
+
+    query = query.order_by(Contact.date_added.desc())
+    contacts = query.paginate(page=page, per_page=50, error_out=False)
+
+    return render_template(
+        "contacts.html", contacts=contacts, search=search,
+        status_filter=status_filter,
+    )
+
+
+@app.route("/contact/<int:contact_id>")
+@login_required
+def contact_detail(contact_id):
+    contact = db.session.get(Contact, contact_id) or abort(404)
+    activities = Activity.query.filter_by(contact_id=contact.id).order_by(
+        Activity.activity_date.desc()
+    ).limit(50).all()
+    return render_template(
+        "contact_detail.html", contact=contact, activities=activities,
+    )
+
+
+@app.route("/contact/<int:contact_id>/log-activity", methods=["POST"])
+@login_required
+def log_activity(contact_id):
+    contact = db.session.get(Contact, contact_id) or abort(404)
+    act = Activity(
+        contact_id=contact.id,
+        case_id=contact.case_id,
+        activity_type=request.form.get("type", "note"),
+        subject=request.form.get("subject", ""),
+        description=request.form.get("description", ""),
+        direction=request.form.get("direction") or None,
+        status=request.form.get("status", "completed"),
+        due_date=request.form.get("due_date") or None,
+        created_by_id=current_user.id,
+    )
+    db.session.add(act)
+    db.session.commit()
+    flash("Activity logged.", "success")
+    return redirect(url_for("contact_detail", contact_id=contact.id))
+
+
+@app.route("/contact/<int:contact_id>/update-status", methods=["POST"])
+@login_required
+def update_contact_status(contact_id):
+    contact = db.session.get(Contact, contact_id) or abort(404)
+    new_status = request.form.get("response_status")
+    contact.response_status = new_status
+    if new_status == "stop":
+        contact.dnc = True
+        contact.dnc_date = datetime.utcnow()
+    db.session.commit()
+    flash(f"Contact status updated to {new_status}.", "success")
+    return redirect(url_for("contact_detail", contact_id=contact.id))
+
+
+# ── Transactions ─────────────────────────────────────────────────────────────
+
+@app.route("/transactions")
+@login_required
+def transactions_list():
+    page = request.args.get("page", 1, type=int)
+    show_closed = request.args.get("closed", "0") == "1"
+    type_filter = request.args.get("type", "")
+
+    query = Transaction.query
+    if not show_closed:
+        query = query.filter_by(is_closed=False)
+    if type_filter:
+        query = query.filter_by(transaction_type=type_filter)
+
+    query = query.order_by(Transaction.updated_at.desc())
+    txns = query.paginate(page=page, per_page=50, error_out=False)
+
+    return render_template(
+        "transactions.html", transactions=txns,
+        show_closed=show_closed, type_filter=type_filter,
+    )
+
+
+@app.route("/transaction/new", methods=["GET", "POST"])
+@login_required
+def new_transaction():
+    if request.method == "POST":
+        txn = Transaction(
+            name=request.form.get("name"),
+            property_address=request.form.get("property_address"),
+            town=request.form.get("town"),
+            transaction_type=request.form.get("transaction_type"),
+            stage=request.form.get("stage", "New"),
+            amount=float(request.form.get("amount") or 0) or None,
+            list_price=float(request.form.get("list_price") or 0) or None,
+            close_date=request.form.get("close_date") or None,
+            assigned_to_id=request.form.get("assigned_to_id") or current_user.id,
+            notes=request.form.get("notes"),
+        )
+        db.session.add(txn)
+        db.session.commit()
+        flash("Transaction created.", "success")
+        return redirect(url_for("transaction_detail", txn_id=txn.id))
+    users = User.query.filter_by(is_active=True).all()
+    return render_template("transaction_form.html", txn=None, users=users)
+
+
+@app.route("/transaction/<int:txn_id>")
+@login_required
+def transaction_detail(txn_id):
+    txn = db.session.get(Transaction, txn_id) or abort(404)
+    activities = Activity.query.filter_by(transaction_id=txn.id).order_by(
+        Activity.activity_date.desc()
+    ).limit(50).all()
+    return render_template("transaction_detail.html", txn=txn, activities=activities)
+
+
+@app.route("/transaction/<int:txn_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_transaction(txn_id):
+    txn = db.session.get(Transaction, txn_id) or abort(404)
+    if request.method == "POST":
+        txn.name = request.form.get("name", txn.name)
+        txn.property_address = request.form.get("property_address", txn.property_address)
+        txn.town = request.form.get("town", txn.town)
+        txn.transaction_type = request.form.get("transaction_type", txn.transaction_type)
+        new_stage = request.form.get("stage", txn.stage)
+        if new_stage != txn.stage:
+            old_stage = txn.stage
+            txn.stage = new_stage
+            act = Activity(
+                transaction_id=txn.id, activity_type="note",
+                subject=f"Stage changed: {old_stage} → {new_stage}",
+                created_by_id=current_user.id,
+            )
+            db.session.add(act)
+        txn.amount = float(request.form.get("amount") or 0) or None
+        txn.list_price = float(request.form.get("list_price") or 0) or None
+        txn.contract_price = float(request.form.get("contract_price") or 0) or None
+        txn.close_date = request.form.get("close_date") or None
+        txn.assigned_to_id = request.form.get("assigned_to_id") or txn.assigned_to_id
+        txn.notes = request.form.get("notes")
+        if new_stage in ("Closed Won", "Closed Lost"):
+            txn.is_closed = True
+            txn.is_won = new_stage == "Closed Won"
+        txn.updated_at = datetime.utcnow()
+        db.session.commit()
+        flash("Transaction updated.", "success")
+        return redirect(url_for("transaction_detail", txn_id=txn.id))
+    users = User.query.filter_by(is_active=True).all()
+    return render_template("transaction_form.html", txn=txn, users=users)
+
+
+# ── Leads Board ──────────────────────────────────────────────────────────────
+
+@app.route("/leads")
+@login_required
+def leads():
+    interested = Contact.query.filter_by(
+        response_status="interested", dnc=False
+    ).order_by(Contact.date_added.desc()).all()
+
+    needs_help = Contact.query.filter_by(
+        response_status="needs_help", dnc=False
+    ).order_by(Contact.date_added.desc()).all()
+
+    return render_template("leads.html", interested=interested, needs_help=needs_help)
+
+
+# ── Settings / User Management ───────────────────────────────────────────────
+
+@app.route("/settings")
+@login_required
+@admin_required
+def settings():
+    users = User.query.all()
+    return render_template("settings.html", users=users)
+
+
+@app.route("/settings/add-user", methods=["POST"])
+@login_required
+@admin_required
+def add_user():
+    email = request.form.get("email", "").strip().lower()
+    if User.query.filter_by(email=email).first():
+        flash("User with that email already exists.", "danger")
+        return redirect(url_for("settings"))
+    user = User(
+        email=email,
+        name=request.form.get("name", ""),
+        role=request.form.get("role", "agent"),
+        phone=request.form.get("phone"),
+    )
+    user.set_password(request.form.get("password", "changeme"))
+    db.session.add(user)
+    db.session.commit()
+    flash(f"User {user.name} created.", "success")
+    return redirect(url_for("settings"))
+
+
+# ── API Endpoints ────────────────────────────────────────────────────────────
+
+@app.route("/api/pipeline-summary")
+@login_required
+def api_pipeline_summary():
+    counts = {}
+    for status in PIPELINE_STATUSES:
+        counts[status] = Case.query.filter_by(status=status).filter(
+            Case.date_closed.is_(None)
+        ).count()
+    return jsonify(counts)
+
+
+@app.route("/api/search")
+@login_required
+def api_search():
+    q = request.args.get("q", "")
+    if len(q) < 2:
+        return jsonify([])
+    results = []
+    # Search contacts
+    contacts = Contact.query.filter(
+        db.or_(
+            Contact.name.ilike(f"%{q}%"),
+            Contact.primary_phone.ilike(f"%{q}%"),
+        )
+    ).limit(5).all()
+    for c in contacts:
+        results.append({
+            "type": "contact", "id": c.id, "label": c.name or "Unknown",
+            "sub": c.primary_phone or "",
+            "url": url_for("contact_detail", contact_id=c.id),
+        })
+    # Search cases
+    cases = Case.query.filter(
+        db.or_(
+            Case.address.ilike(f"%{q}%"),
+            Case.docket_number.ilike(f"%{q}%"),
+        )
+    ).limit(5).all()
+    for c in cases:
+        results.append({
+            "type": "case", "id": c.id, "label": c.address or c.docket_number,
+            "sub": f"{c.town} — {c.status}",
+            "url": url_for("case_detail", case_id=c.id),
+        })
+    return jsonify(results)
+
+
+# ── Init DB & Seed ───────────────────────────────────────────────────────────
+
+def init_db():
+    """Create tables and seed admin user if needed."""
+    db.create_all()
+    if not User.query.filter_by(email="warren@homesellct.com").first():
+        admin = User(
+            email="warren@homesellct.com",
+            name="Warren Juall",
+            role="admin",
+            phone="2036318040",
+        )
+        admin.set_password("tripoint2026")
+        db.session.add(admin)
+
+    if not User.query.filter_by(email="manny@tripointrealestatect.com").first():
+        manny = User(
+            email="manny@tripointrealestatect.com",
+            name="Manny Kavroudakis",
+            role="agent",
+            phone="2036803095",
+        )
+        manny.set_password("tripoint2026")
+        db.session.add(manny)
+
+    db.session.commit()
+
+
+@app.cli.command("init-db")
+def init_db_command():
+    init_db()
+    print("Database initialized.")
+
+
+@app.cli.command("import-sf")
+def import_sf_command():
+    """Import Salesforce export data."""
+    from import_salesforce import run_import
+    run_import(db.session)
+
+
+with app.app_context():
+    init_db()
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)

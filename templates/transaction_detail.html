@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ txn.name }} — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb" style="font-size:0.8rem;">
+            <li class="breadcrumb-item"><a href="{{ url_for('transactions_list') }}">Transactions</a></li>
+            <li class="breadcrumb-item active">{{ txn.name }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex align-items-center">
+        <h1>{{ txn.name }}</h1>
+        {% set stage_colors = {'New': 'info', 'Working': 'primary', 'Offer Made': 'warning', 'Contract Signed': 'success', 'Active Listing': 'success', 'Closed Won': 'success', 'Closed Lost': 'danger'} %}
+        <span class="badge bg-{{ stage_colors.get(txn.stage, 'secondary') }} badge-status ms-3" style="font-size:0.9rem;">{{ txn.stage }}</span>
+        <a href="{{ url_for('edit_transaction', txn_id=txn.id) }}" class="btn btn-sm btn-outline-primary ms-3"><i class="bi bi-pencil"></i> Edit</a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-5">
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Transaction Details</h6>
+                <table class="table table-sm table-borderless mb-0" style="font-size:0.85rem;">
+                    <tr><td class="text-muted" style="width:35%;">Property</td><td>{{ txn.property_address or 'N/A' }}</td></tr>
+                    <tr><td class="text-muted">Town</td><td>{{ txn.town or 'N/A' }}</td></tr>
+                    <tr><td class="text-muted">Type</td><td>{{ txn.transaction_type or 'N/A' }}</td></tr>
+                    <tr><td class="text-muted">Stage</td><td>{{ txn.stage }}</td></tr>
+                    {% if txn.amount %}
+                    <tr><td class="text-muted">Amount</td><td>${{ '{:,.0f}'.format(txn.amount) }}</td></tr>
+                    {% endif %}
+                    {% if txn.list_price %}
+                    <tr><td class="text-muted">List Price</td><td>${{ '{:,.0f}'.format(txn.list_price) }}</td></tr>
+                    {% endif %}
+                    {% if txn.contract_price %}
+                    <tr><td class="text-muted">Contract</td><td>${{ '{:,.0f}'.format(txn.contract_price) }}</td></tr>
+                    {% endif %}
+                    {% if txn.close_date %}
+                    <tr><td class="text-muted">Close Date</td><td>{{ txn.close_date.strftime('%b %d, %Y') }}</td></tr>
+                    {% endif %}
+                    {% if txn.assigned_to %}
+                    <tr><td class="text-muted">Assigned To</td><td>{{ txn.assigned_to.name }}</td></tr>
+                    {% endif %}
+                    <tr><td class="text-muted">Created</td><td>{{ txn.created_at.strftime('%b %d, %Y') if txn.created_at else 'N/A' }}</td></tr>
+                </table>
+            </div>
+        </div>
+
+        {% if txn.contact %}
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">Contact</h6>
+                <a href="{{ url_for('contact_detail', contact_id=txn.contact.id) }}" class="text-decoration-none">
+                    {{ txn.contact.name }}
+                </a>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if txn.notes %}
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">Notes</h6>
+                <p style="font-size:0.85rem;white-space:pre-wrap;">{{ txn.notes }}</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-7">
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Activity</h6>
+                <div class="activity-timeline">
+                    {% for act in activities %}
+                    <div class="activity-item">
+                        <div class="dot {{ act.activity_type }}"></div>
+                        <div>
+                            <div style="font-size:0.85rem;font-weight:500;">{{ act.subject }}</div>
+                            {% if act.description %}
+                            <div style="font-size:0.8rem;color:#475569;">{{ act.description[:200] }}</div>
+                            {% endif %}
+                            <div style="font-size:0.7rem;color:#94a3b8;">
+                                {{ act.activity_date.strftime('%b %d, %Y %I:%M %p') if act.activity_date else '' }}
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted" style="font-size:0.85rem;">No activity yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

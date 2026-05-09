@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-center justify-content-between">
+    <h1>Dashboard</h1>
+    <span class="text-muted" style="font-size:0.85rem;">{{ now.strftime('%A, %B %d, %Y') }}</span>
+</div>
+
+<!-- Stat Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-label">Active Cases</div>
+            <div class="stat-number">{{ total_active }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-label">Hot Leads</div>
+            <div class="stat-number text-success">{{ hot_leads|length }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-label">Active Transactions</div>
+            <div class="stat-number" style="color:var(--tp-blue);">{{ active_txns|length }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-label">Closed Cases</div>
+            <div class="stat-number text-secondary">{{ closed_count }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Pipeline Summary -->
+    <div class="col-md-4">
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Pipeline by Status</h6>
+                {% for status in pipeline_statuses %}
+                {% set count = pipeline_counts.get(status, 0) %}
+                {% if count > 0 %}
+                <a href="{{ url_for('pipeline', status=status) }}" class="d-flex align-items-center text-decoration-none text-dark py-1">
+                    <span style="font-size:0.85rem;">{{ status }}</span>
+                    <span class="pipeline-badge has-items ms-auto">{{ count }}</span>
+                </a>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Hot Leads -->
+    <div class="col-md-4">
+        <div class="card card-custom">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <h6 class="fw-bold mb-0">Hot Leads</h6>
+                    <a href="{{ url_for('leads') }}" class="ms-auto" style="font-size:0.8rem;">View all</a>
+                </div>
+                {% for lead in hot_leads %}
+                <a href="{{ url_for('contact_detail', contact_id=lead.id) }}" class="d-block text-decoration-none mb-2">
+                    <div class="d-flex align-items-center">
+                        <div>
+                            <div class="fw-semibold" style="font-size:0.9rem;color:#1e293b;">{{ lead.name or 'Unknown' }}</div>
+                            <div style="font-size:0.75rem;color:#94a3b8;">
+                                {{ lead.case.town if lead.case else '' }}
+                                {% if lead.case %} — {{ lead.case.status }}{% endif %}
+                            </div>
+                        </div>
+                        {% set label, color = response_labels.get(lead.response_status, ('Unknown', 'secondary')) %}
+                        <span class="badge bg-{{ color }} badge-status ms-auto">{{ label }}</span>
+                    </div>
+                </a>
+                {% else %}
+                <p class="text-muted" style="font-size:0.85rem;">No hot leads yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Upcoming Sale Dates -->
+    <div class="col-md-4">
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Upcoming Sale Dates</h6>
+                {% for case in upcoming_sales %}
+                <a href="{{ url_for('case_detail', case_id=case.id) }}" class="d-block text-decoration-none mb-2">
+                    <div class="d-flex align-items-center">
+                        <div>
+                            <div class="fw-semibold" style="font-size:0.85rem;color:#1e293b;">{{ case.address or case.docket_number }}</div>
+                            <div style="font-size:0.75rem;color:#94a3b8;">{{ case.town }}</div>
+                        </div>
+                        <span class="badge bg-danger badge-status ms-auto">{{ case.sale_date.strftime('%b %d') if case.sale_date else '' }}</span>
+                    </div>
+                </a>
+                {% else %}
+                <p class="text-muted" style="font-size:0.85rem;">No upcoming sale dates.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="row mt-4">
+    <div class="col-md-8">
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Recent Activity</h6>
+                <div class="activity-timeline">
+                    {% for act in recent %}
+                    <div class="activity-item">
+                        <div class="dot {{ act.activity_type }}"></div>
+                        <div>
+                            <div style="font-size:0.85rem;font-weight:500;">{{ act.subject }}</div>
+                            <div style="font-size:0.75rem;color:#94a3b8;">
+                                {{ act.activity_date.strftime('%b %d, %I:%M %p') if act.activity_date else '' }}
+                                {% if act.contact %} — {{ act.contact.name }}{% endif %}
+                                {% if act.created_by %} by {{ act.created_by.name }}{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted" style="font-size:0.85rem;">No activity yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Transactions -->
+    <div class="col-md-4">
+        <div class="card card-custom">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <h6 class="fw-bold mb-0">Transactions</h6>
+                    <a href="{{ url_for('new_transaction') }}" class="btn btn-sm btn-primary ms-auto">
+                        <i class="bi bi-plus"></i> New
+                    </a>
+                </div>
+                {% for txn in active_txns %}
+                <a href="{{ url_for('transaction_detail', txn_id=txn.id) }}" class="d-block text-decoration-none mb-2">
+                    <div class="fw-semibold" style="font-size:0.85rem;color:#1e293b;">{{ txn.name }}</div>
+                    <div style="font-size:0.75rem;color:#94a3b8;">
+                        {{ txn.stage }} {% if txn.amount %} — ${{ '{:,.0f}'.format(txn.amount) }}{% endif %}
+                    </div>
+                </a>
+                {% else %}
+                <p class="text-muted" style="font-size:0.85rem;">No active transactions.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

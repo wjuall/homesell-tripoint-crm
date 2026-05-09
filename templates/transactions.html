@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Transactions — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-center justify-content-between">
+    <h1>Transactions</h1>
+    <a href="{{ url_for('new_transaction') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> New Transaction</a>
+</div>
+
+<div class="card card-custom mb-3">
+    <div class="card-body py-2">
+        <div class="d-flex gap-2 align-items-center">
+            <a href="{{ url_for('transactions_list') }}" class="btn btn-sm {% if not show_closed and not type_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
+            <a href="{{ url_for('transactions_list', closed='1') }}" class="btn btn-sm {% if show_closed %}btn-primary{% else %}btn-outline-secondary{% endif %}">Closed</a>
+            <span class="text-muted mx-2">|</span>
+            <a href="{{ url_for('transactions_list', type='listing') }}" class="btn btn-sm {% if type_filter == 'listing' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Listings</a>
+            <a href="{{ url_for('transactions_list', type='flip') }}" class="btn btn-sm {% if type_filter == 'flip' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Flips</a>
+            <a href="{{ url_for('transactions_list', type='purchase') }}" class="btn btn-sm {% if type_filter == 'purchase' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Purchases</a>
+            <a href="{{ url_for('transactions_list', type='foreclosure') }}" class="btn btn-sm {% if type_filter == 'foreclosure' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Foreclosure</a>
+        </div>
+    </div>
+</div>
+
+<div class="card card-custom">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Property</th>
+                    <th>Type</th>
+                    <th>Stage</th>
+                    <th>Amount</th>
+                    <th>Close Date</th>
+                    <th>Assigned To</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for txn in transactions.items %}
+                <tr style="cursor:pointer;" onclick="window.location='{{ url_for('transaction_detail', txn_id=txn.id) }}'">
+                    <td>
+                        <div class="fw-semibold">{{ txn.name }}</div>
+                        {% if txn.town %}<div style="font-size:0.75rem;color:#94a3b8;">{{ txn.town }}</div>{% endif %}
+                    </td>
+                    <td><span class="badge bg-light text-dark badge-status">{{ txn.transaction_type or 'N/A' }}</span></td>
+                    <td>
+                        {% set stage_colors = {'New': 'info', 'Working': 'primary', 'Offer Made': 'warning', 'Contract Signed': 'success', 'Active Listing': 'success', 'Closed Won': 'success', 'Closed Lost': 'danger'} %}
+                        <span class="badge bg-{{ stage_colors.get(txn.stage, 'secondary') }} badge-status">{{ txn.stage }}</span>
+                    </td>
+                    <td>{% if txn.amount %}${{ '{:,.0f}'.format(txn.amount) }}{% endif %}</td>
+                    <td>{{ txn.close_date.strftime('%b %d, %Y') if txn.close_date else '' }}</td>
+                    <td style="font-size:0.85rem;">{{ txn.assigned_to.name if txn.assigned_to else '' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted py-4">No transactions found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if transactions.pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if transactions.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('transactions_list', page=transactions.prev_num, closed=show_closed|int, type=type_filter) }}">Prev</a></li>
+        {% endif %}
+        {% for p in transactions.iter_pages() %}
+        {% if p %}
+        <li class="page-item {% if p == transactions.page %}active{% endif %}"><a class="page-link" href="{{ url_for('transactions_list', page=p, closed=show_closed|int, type=type_filter) }}">{{ p }}</a></li>
+        {% endif %}
+        {% endfor %}
+        {% if transactions.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('transactions_list', page=transactions.next_num, closed=show_closed|int, type=type_filter) }}">Next</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

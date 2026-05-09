@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Leads — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Hot Leads</h1>
+</div>
+
+<div class="row g-4">
+    <!-- Interested -->
+    <div class="col-md-6">
+        <div class="card card-custom">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <h6 class="fw-bold mb-0"><span class="badge bg-success me-2">{{ interested|length }}</span> Interested</h6>
+                </div>
+                {% for lead in interested %}
+                <div class="border-bottom pb-2 mb-2">
+                    <a href="{{ url_for('contact_detail', contact_id=lead.id) }}" class="fw-semibold text-decoration-none">
+                        {{ lead.name or 'Unknown' }}
+                    </a>
+                    <div style="font-size:0.8rem;color:#64748b;">
+                        {% if lead.case %}
+                        {{ lead.case.address }} — {{ lead.case.town }}
+                        <span class="badge bg-secondary badge-status ms-1">{{ lead.case.status }}</span>
+                        {% endif %}
+                    </div>
+                    <div style="font-size:0.8rem;" class="mt-1">
+                        {% if lead.primary_phone %}
+                        <i class="bi bi-phone text-muted"></i> {{ lead.primary_phone }}
+                        {% endif %}
+                        {% if lead.email %}
+                        <i class="bi bi-envelope text-muted ms-2"></i> {{ lead.email }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted">No interested leads.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Needs Help -->
+    <div class="col-md-6">
+        <div class="card card-custom">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <h6 class="fw-bold mb-0"><span class="badge bg-warning me-2">{{ needs_help|length }}</span> Needs Help</h6>
+                </div>
+                {% for lead in needs_help %}
+                <div class="border-bottom pb-2 mb-2">
+                    <a href="{{ url_for('contact_detail', contact_id=lead.id) }}" class="fw-semibold text-decoration-none">
+                        {{ lead.name or 'Unknown' }}
+                    </a>
+                    <div style="font-size:0.8rem;color:#64748b;">
+                        {% if lead.case %}
+                        {{ lead.case.address }} — {{ lead.case.town }}
+                        <span class="badge bg-secondary badge-status ms-1">{{ lead.case.status }}</span>
+                        {% endif %}
+                    </div>
+                    <div style="font-size:0.8rem;" class="mt-1">
+                        {% if lead.primary_phone %}
+                        <i class="bi bi-phone text-muted"></i> {{ lead.primary_phone }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted">No needs-help leads.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Contacts — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex align-items-center justify-content-between">
+    <h1>Contacts</h1>
+    <span class="text-muted" style="font-size:0.85rem;">{{ contacts.total }} total</span>
+</div>
+
+<!-- Filters -->
+<div class="card card-custom mb-3">
+    <div class="card-body py-2">
+        <form method="GET" class="d-flex gap-2 align-items-center">
+            <input type="text" name="q" class="form-control form-control-sm" placeholder="Search name, phone, email..." value="{{ search }}" style="max-width:300px;">
+            <select name="status" class="form-select form-select-sm" style="max-width:180px;">
+                <option value="">All Statuses</option>
+                <option value="interested" {% if status_filter == 'interested' %}selected{% endif %}>Interested</option>
+                <option value="needs_help" {% if status_filter == 'needs_help' %}selected{% endif %}>Needs Help</option>
+                <option value="not_interested" {% if status_filter == 'not_interested' %}selected{% endif %}>Not Interested</option>
+                <option value="stop" {% if status_filter == 'stop' %}selected{% endif %}>DNC/Stop</option>
+                <option value="wrong_number" {% if status_filter == 'wrong_number' %}selected{% endif %}>Wrong Number</option>
+                <option value="deceased" {% if status_filter == 'deceased' %}selected{% endif %}>Deceased</option>
+            </select>
+            <button class="btn btn-sm btn-primary">Filter</button>
+            {% if search or status_filter %}
+            <a href="{{ url_for('contacts_list') }}" class="btn btn-sm btn-outline-secondary">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card card-custom">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>Property</th>
+                    <th>Status</th>
+                    <th>Response</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for contact in contacts.items %}
+                <tr style="cursor:pointer;" onclick="window.location='{{ url_for('contact_detail', contact_id=contact.id) }}'">
+                    <td>
+                        <span class="fw-semibold">{{ contact.name or 'Unknown' }}</span>
+                        {% if contact.dnc %}<span class="badge bg-danger badge-status ms-1">DNC</span>{% endif %}
+                    </td>
+                    <td style="font-size:0.85rem;">{{ contact.primary_phone or '' }}</td>
+                    <td style="font-size:0.85rem;">{{ contact.email or '' }}</td>
+                    <td style="font-size:0.85rem;">
+                        {% if contact.case %}
+                        {{ contact.case.address or contact.case.town or '' }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if contact.case %}
+                        <span class="badge bg-secondary badge-status">{{ contact.case.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if contact.response_status %}
+                        {% set label, color = response_labels.get(contact.response_status, ('', 'secondary')) %}
+                        <span class="badge bg-{{ color }} badge-status">{{ label }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted py-4">No contacts found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if contacts.pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if contacts.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('contacts_list', page=contacts.prev_num, q=search, status=status_filter) }}">Prev</a></li>
+        {% endif %}
+        {% for p in contacts.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+        <li class="page-item {% if p == contacts.page %}active{% endif %}"><a class="page-link" href="{{ url_for('contacts_list', page=p, q=search, status=status_filter) }}">{{ p }}</a></li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">...</span></li>
+        {% endif %}
+        {% endfor %}
+        {% if contacts.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('contacts_list', page=contacts.next_num, q=search, status=status_filter) }}">Next</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Settings — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Settings</h1>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-8">
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Team Members</h6>
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.name }}</td>
+                            <td>{{ user.email }}</td>
+                            <td><span class="badge bg-{{ 'primary' if user.role == 'admin' else 'secondary' }}">{{ user.role }}</span></td>
+                            <td><span class="badge bg-{{ 'success' if user.is_active else 'danger' }}">{{ 'Active' if user.is_active else 'Inactive' }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Add Team Member</h6>
+                <form method="POST" action="{{ url_for('add_user') }}">
+                    <div class="mb-2">
+                        <input type="text" name="name" class="form-control form-control-sm" placeholder="Full Name" required>
+                    </div>
+                    <div class="mb-2">
+                        <input type="email" name="email" class="form-control form-control-sm" placeholder="Email" required>
+                    </div>
+                    <div class="mb-2">
+                        <input type="password" name="password" class="form-control form-control-sm" placeholder="Password" required>
+                    </div>
+                    <div class="mb-2">
+                        <select name="role" class="form-select form-select-sm">
+                            <option value="agent">Agent</option>
+                            <option value="admin">Admin</option>
+                            <option value="va">VA</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <input type="text" name="phone" class="form-control form-control-sm" placeholder="Phone (optional)">
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary w-100">Add User</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

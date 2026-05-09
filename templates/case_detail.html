@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}{{ case.address or case.docket_number }} — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb" style="font-size:0.8rem;">
+            <li class="breadcrumb-item"><a href="{{ url_for('pipeline') }}">Pipeline</a></li>
+            <li class="breadcrumb-item active">{{ case.docket_number }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex align-items-center">
+        <h1>{{ case.address or 'No Address' }}</h1>
+        {% set status_colors = {
+            'New Case': 'info', 'Sale Date Set': 'danger', 'Sale Date Extended': 'warning',
+            'Motion for Foreclosure': 'warning', 'Judgment of Foreclosure': 'danger',
+            'In Mediation': 'primary', 'Mediation Failed': 'warning',
+            'In Bankruptcy': 'secondary', 'Bankruptcy Stay Lifted': 'warning',
+        } %}
+        <span class="badge bg-{{ status_colors.get(case.status, 'secondary') }} badge-status ms-3" style="font-size:0.9rem;">{{ case.status }}</span>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Case Info -->
+    <div class="col-md-4">
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Case Details</h6>
+                <table class="table table-sm table-borderless mb-0" style="font-size:0.85rem;">
+                    <tr><td class="text-muted" style="width:40%;">Docket</td><td>{{ case.docket_number }}</td></tr>
+                    <tr><td class="text-muted">Town</td><td>{{ case.town }}</td></tr>
+                    <tr><td class="text-muted">Status</td><td>{{ case.status }}</td></tr>
+                    {% if case.sale_date %}
+                    <tr><td class="text-muted">Sale Date</td><td class="{% if case.sale_date >= now.date() and (case.sale_date - now.date()).days < 14 %}text-danger fw-bold{% endif %}">{{ case.sale_date.strftime('%b %d, %Y') }}</td></tr>
+                    {% endif %}
+                    {% if case.property_type %}
+                    <tr><td class="text-muted">Type</td><td>{{ case.property_type }}</td></tr>
+                    {% endif %}
+                    <tr><td class="text-muted">Added</td><td>{{ case.date_added.strftime('%b %d, %Y') if case.date_added else 'N/A' }}</td></tr>
+                    {% if case.case_url %}
+                    <tr><td class="text-muted">Judicial</td><td><a href="{{ case.case_url }}" target="_blank">View Case <i class="bi bi-box-arrow-up-right"></i></a></td></tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+
+        <!-- Update Status -->
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">Update Status</h6>
+                <form method="POST" action="{{ url_for('update_case_status', case_id=case.id) }}">
+                    <select name="status" class="form-select form-select-sm mb-2">
+                        {% for s in pipeline_statuses + ['Closed', 'Dismissed'] %}
+                        <option value="{{ s }}" {% if s == case.status %}selected{% endif %}>{{ s }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-primary w-100">Update</button>
+                </form>
+            </div>
+        </div>
+
+        {% if case.notes %}
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">Notes</h6>
+                <p style="font-size:0.85rem;">{{ case.notes }}</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Contacts -->
+    <div class="col-md-4">
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Contacts</h6>
+                {% for contact in contacts %}
+                <div class="mb-3 pb-3 {% if not loop.last %}border-bottom{% endif %}">
+                    <a href="{{ url_for('contact_detail', contact_id=contact.id) }}" class="fw-semibold text-decoration-none" style="font-size:0.95rem;">
+                        {{ contact.name or 'Unknown' }}
+                    </a>
+                    {% if contact.response_status %}
+                    {% set label, color = response_labels.get(contact.response_status, ('', 'secondary')) %}
+                    <span class="badge bg-{{ color }} badge-status ms-1">{{ label }}</span>
+                    {% endif %}
+                    {% if contact.dnc %}
+                    <span class="badge bg-danger badge-status">DNC</span>
+                    {% endif %}
+                    <div style="font-size:0.8rem;color:#64748b;" class="mt-1">
+                        {% if contact.primary_phone %}
+                        <div><i class="bi bi-phone"></i> {{ contact.primary_phone }}</div>
+                        {% endif %}
+                        {% if contact.secondary_phone %}
+                        <div><i class="bi bi-phone"></i> {{ contact.secondary_phone }}</div>
+                        {% endif %}
+                        {% if contact.email %}
+                        <div><i class="bi bi-envelope"></i> {{ contact.email }}</div>
+                        {% endif %}
+                        {% if contact.mailing_address %}
+                        <div><i class="bi bi-geo-alt"></i> {{ contact.mailing_address }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted" style="font-size:0.85rem;">No contacts yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        {% if transactions %}
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Transactions</h6>
+                {% for txn in transactions %}
+                <a href="{{ url_for('transaction_detail', txn_id=txn.id) }}" class="d-block text-decoration-none mb-2">
+                    <span class="fw-semibold" style="font-size:0.85rem;">{{ txn.name }}</span>
+                    <span class="badge bg-secondary badge-status">{{ txn.stage }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Activity -->
+    <div class="col-md-4">
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Activity</h6>
+                <div class="activity-timeline">
+                    {% for act in activities %}
+                    <div class="activity-item">
+                        <div class="dot {{ act.activity_type }}"></div>
+                        <div>
+                            <div style="font-size:0.85rem;font-weight:500;">{{ act.subject }}</div>
+                            {% if act.description %}
+                            <div style="font-size:0.8rem;color:#64748b;">{{ act.description[:150] }}</div>
+                            {% endif %}
+                            <div style="font-size:0.7rem;color:#94a3b8;">
+                                {{ act.activity_date.strftime('%b %d, %Y %I:%M %p') if act.activity_date else '' }}
+                                {% if act.created_by %} — {{ act.created_by.name }}{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted" style="font-size:0.85rem;">No activity yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

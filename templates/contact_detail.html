@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}{{ contact.name }} — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb" style="font-size:0.8rem;">
+            <li class="breadcrumb-item"><a href="{{ url_for('contacts_list') }}">Contacts</a></li>
+            <li class="breadcrumb-item active">{{ contact.name or 'Unknown' }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex align-items-center">
+        <h1>{{ contact.name or 'Unknown' }}</h1>
+        {% if contact.response_status %}
+        {% set label, color = response_labels.get(contact.response_status, ('', 'secondary')) %}
+        <span class="badge bg-{{ color }} badge-status ms-3" style="font-size:0.9rem;">{{ label }}</span>
+        {% endif %}
+        {% if contact.dnc %}
+        <span class="badge bg-danger badge-status ms-2" style="font-size:0.9rem;">DNC</span>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Contact Info -->
+    <div class="col-md-4">
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Contact Info</h6>
+                <table class="table table-sm table-borderless mb-0" style="font-size:0.85rem;">
+                    {% if contact.primary_phone %}
+                    <tr><td class="text-muted" style="width:35%;"><i class="bi bi-phone"></i> Primary</td><td>{{ contact.primary_phone }}</td></tr>
+                    {% endif %}
+                    {% if contact.secondary_phone %}
+                    <tr><td class="text-muted"><i class="bi bi-phone"></i> Secondary</td><td>{{ contact.secondary_phone }}</td></tr>
+                    {% endif %}
+                    {% if contact.additional_phones %}
+                    <tr><td class="text-muted"><i class="bi bi-phone"></i> Other</td><td>{{ contact.additional_phones }}</td></tr>
+                    {% endif %}
+                    {% if contact.email %}
+                    <tr><td class="text-muted"><i class="bi bi-envelope"></i> Email</td><td>{{ contact.email }}</td></tr>
+                    {% endif %}
+                    {% if contact.mailing_address %}
+                    <tr><td class="text-muted"><i class="bi bi-geo-alt"></i> Mailing</td><td>{{ contact.mailing_address }}</td></tr>
+                    {% endif %}
+                    {% if contact.contact_type %}
+                    <tr><td class="text-muted">Type</td><td>{{ contact.contact_type }}</td></tr>
+                    {% endif %}
+                    <tr><td class="text-muted">Added</td><td>{{ contact.date_added.strftime('%b %d, %Y') if contact.date_added else 'N/A' }}</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Linked Case -->
+        {% if contact.case %}
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">Linked Case</h6>
+                <a href="{{ url_for('case_detail', case_id=contact.case.id) }}" class="text-decoration-none">
+                    <div class="fw-semibold">{{ contact.case.address or 'No address' }}</div>
+                    <div style="font-size:0.8rem;color:#64748b;">
+                        {{ contact.case.town }} — {{ contact.case.status }}
+                    </div>
+                    {% if contact.case.sale_date %}
+                    <div style="font-size:0.8rem;" class="text-danger">Sale: {{ contact.case.sale_date.strftime('%b %d, %Y') }}</div>
+                    {% endif %}
+                </a>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Update Response Status -->
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">Update Status</h6>
+                <form method="POST" action="{{ url_for('update_contact_status', contact_id=contact.id) }}">
+                    <select name="response_status" class="form-select form-select-sm mb-2">
+                        <option value="">No Response</option>
+                        <option value="interested" {% if contact.response_status == 'interested' %}selected{% endif %}>Interested</option>
+                        <option value="needs_help" {% if contact.response_status == 'needs_help' %}selected{% endif %}>Needs Help</option>
+                        <option value="not_interested" {% if contact.response_status == 'not_interested' %}selected{% endif %}>Not Interested</option>
+                        <option value="stop" {% if contact.response_status == 'stop' %}selected{% endif %}>DNC/Stop</option>
+                        <option value="wrong_number" {% if contact.response_status == 'wrong_number' %}selected{% endif %}>Wrong Number</option>
+                        <option value="deceased" {% if contact.response_status == 'deceased' %}selected{% endif %}>Deceased</option>
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-primary w-100">Update</button>
+                </form>
+            </div>
+        </div>
+
+        {% if contact.notes %}
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">Notes</h6>
+                <p style="font-size:0.85rem; white-space:pre-wrap;">{{ contact.notes }}</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Activity + Log -->
+    <div class="col-md-8">
+        <!-- Log Activity Form -->
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Log Activity</h6>
+                <form method="POST" action="{{ url_for('log_activity', contact_id=contact.id) }}">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-3">
+                            <select name="type" class="form-select form-select-sm">
+                                <option value="call">Call</option>
+                                <option value="sms">SMS</option>
+                                <option value="email">Email</option>
+                                <option value="note" selected>Note</option>
+                                <option value="letter">Letter</option>
+                                <option value="meeting">Meeting</option>
+                                <option value="task">Task</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select name="direction" class="form-select form-select-sm">
+                                <option value="">N/A</option>
+                                <option value="outbound">Outbound</option>
+                                <option value="inbound">Inbound</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select name="status" class="form-select form-select-sm">
+                                <option value="completed">Completed</option>
+                                <option value="open">Open</option>
+                                <option value="missed">Missed</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="date" name="due_date" class="form-control form-control-sm" placeholder="Due date">
+                        </div>
+                    </div>
+                    <input type="text" name="subject" class="form-control form-control-sm mb-2" placeholder="Subject" required>
+                    <textarea name="description" class="form-control form-control-sm mb-2" rows="2" placeholder="Details (optional)"></textarea>
+                    <button type="submit" class="btn btn-sm btn-primary">Log Activity</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Activity Timeline -->
+        <div class="card card-custom">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Activity History</h6>
+                <div class="activity-timeline">
+                    {% for act in activities %}
+                    <div class="activity-item">
+                        <div class="dot {{ act.activity_type }}"></div>
+                        <div>
+                            <div class="d-flex align-items-center">
+                                <span style="font-size:0.85rem;font-weight:500;">{{ act.subject }}</span>
+                                {% if act.direction %}
+                                <span class="badge bg-light text-dark badge-status ms-2">{{ act.direction }}</span>
+                                {% endif %}
+                                {% if act.status == 'open' %}
+                                <span class="badge bg-warning badge-status ms-2">Open</span>
+                                {% endif %}
+                            </div>
+                            {% if act.description %}
+                            <div style="font-size:0.8rem;color:#475569;white-space:pre-wrap;">{{ act.description[:300] }}</div>
+                            {% endif %}
+                            <div style="font-size:0.7rem;color:#94a3b8;">
+                                {{ act.activity_date.strftime('%b %d, %Y %I:%M %p') if act.activity_date else '' }}
+                                {% if act.created_by %} — {{ act.created_by.name }}{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted" style="font-size:0.85rem;">No activity recorded yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

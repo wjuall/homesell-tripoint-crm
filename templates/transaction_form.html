@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if txn else 'New' }} Transaction — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb" style="font-size:0.8rem;">
+            <li class="breadcrumb-item"><a href="{{ url_for('transactions_list') }}">Transactions</a></li>
+            <li class="breadcrumb-item active">{{ 'Edit' if txn else 'New' }}</li>
+        </ol>
+    </nav>
+    <h1>{{ 'Edit' if txn else 'New' }} Transaction</h1>
+</div>
+
+<div class="card card-custom">
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('edit_transaction', txn_id=txn.id) if txn else url_for('new_transaction') }}">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Name</label>
+                    <input type="text" name="name" class="form-control" value="{{ txn.name if txn else '' }}" required placeholder="e.g. 123 Main St — Listing">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Property Address</label>
+                    <input type="text" name="property_address" class="form-control" value="{{ txn.property_address if txn else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Town</label>
+                    <input type="text" name="town" class="form-control" value="{{ txn.town if txn else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Type</label>
+                    <select name="transaction_type" class="form-select">
+                        {% for t in ['listing', 'flip', 'purchase', 'foreclosure', 'referral'] %}
+                        <option value="{{ t }}" {% if txn and txn.transaction_type == t %}selected{% endif %}>{{ t|title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Stage</label>
+                    <select name="stage" class="form-select">
+                        {% for s in transaction_stages %}
+                        <option value="{{ s }}" {% if txn and txn.stage == s %}selected{% endif %}>{{ s }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Amount</label>
+                    <input type="number" name="amount" class="form-control" value="{{ txn.amount if txn and txn.amount else '' }}" step="0.01">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">List Price</label>
+                    <input type="number" name="list_price" class="form-control" value="{{ txn.list_price if txn and txn.list_price else '' }}" step="0.01">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Contract Price</label>
+                    <input type="number" name="contract_price" class="form-control" value="{{ txn.contract_price if txn and txn.contract_price else '' }}" step="0.01">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Close Date</label>
+                    <input type="date" name="close_date" class="form-control" value="{{ txn.close_date.strftime('%Y-%m-%d') if txn and txn.close_date else '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Assigned To</label>
+                    <select name="assigned_to_id" class="form-select">
+                        {% for u in users %}
+                        <option value="{{ u.id }}" {% if txn and txn.assigned_to_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-control" rows="3">{{ txn.notes if txn else '' }}</textarea>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary">{{ 'Save Changes' if txn else 'Create Transaction' }}</button>
+                <a href="{{ url_for('transactions_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
