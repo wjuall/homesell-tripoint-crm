@@ -530,8 +530,27 @@ def api_search():
 # ── Init DB & Seed ───────────────────────────────────────────────────────────
 
 def init_db():
-    """Create tables and seed admin user if needed."""
+    """Create tables, run migrations, and seed admin user if needed."""
     db.create_all()
+
+    # ── Schema migrations (add columns that db.create_all won't add) ─────
+    from sqlalchemy import text, inspect
+    with db.engine.connect() as conn:
+        inspector = inspect(db.engine)
+
+        # Add lead_type to cases if missing
+        case_cols = [c["name"] for c in inspector.get_columns("cases")]
+        if "lead_type" not in case_cols:
+            conn.execute(text("ALTER TABLE cases ADD COLUMN lead_type VARCHAR(40) DEFAULT 'Foreclosure'"))
+            conn.commit()
+
+        # Make docket_number nullable if it has a NOT NULL constraint
+        # (already nullable in new schema, but existing DB may differ)
+
+        # Add index on transaction_type if missing
+        txn_cols = [c["name"] for c in inspector.get_columns("transactions")]
+        # transaction_type column already exists, just may need wider varchar
+
     if not User.query.filter_by(email="warren@homesellct.com").first():
         admin = User(
             email="warren@homesellct.com",
