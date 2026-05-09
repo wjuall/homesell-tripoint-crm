@@ -632,7 +632,7 @@ def run_task_import(session, sf_dir="sf_export"):
                 status="completed",
                 activity_date=activity_date or datetime.utcnow(),
                 created_by_id=assigned_user_id,
-                sf_task_id=f"report-{date_str}-{subject[:30]}",
+                sf_task_id=None,  # no SF ID for report-imported tasks
             )
             session.add(act)
             imported_activities += 1
