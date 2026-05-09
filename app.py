@@ -1045,6 +1045,123 @@ def admin_import_tasks():
         """
 
 
+@app.route("/admin/merge-duplicates", methods=["GET", "POST"])
+@login_required
+@admin_required
+def admin_merge_duplicates():
+    """Find and merge duplicate cases created by hot lead seed vs SF import."""
+    import re
+
+    def normalize_docket(d):
+        """Strip dashes and suffix to compare docket numbers."""
+        if not d:
+            return ""
+        return re.sub(r'[^A-Z0-9]', '', d.upper()).rstrip('S')
+
+    # Find all cases, group by normalized docket
+    all_cases = Case.query.filter(Case.docket_number.isnot(None)).all()
+    docket_groups = {}
+    for c in all_cases:
+        key = normalize_docket(c.docket_number)
+        if key:
+            docket_groups.setdefault(key, []).append(c)
+
+    # Find groups with duplicates
+    duplicates = {k: v for k, v in docket_groups.items() if len(v) > 1}
+
+    if request.method == "GET":
+        return render_template("admin_merge_duplicates.html", duplicates=duplicates)
+
+    # POST — merge duplicates
+    merged = 0
+    for key, cases in duplicates.items():
+        # Keep the one with the best data (real address, SF account ID)
+        cases.sort(key=lambda c: (
+            bool(c.sf_account_id),  # prefer SF-imported
+            not bool(c.address and "Property" in c.address),  # prefer real address
+            bool(c.case_url),
+            bool(c.docket_number),
+        ), reverse=True)
+
+        keep = cases[0]
+        for discard in cases[1:]:
+            # Move contacts from discard to keep
+            for contact in Contact.query.filter_by(case_id=discard.id).all():
+                # Check if same contact already exists on keep case
+                existing = Contact.query.filter_by(
+                    case_id=keep.id, name=contact.name
+                ).first()
+                if existing:
+                    # Merge data into existing: keep the one with more info
+                    if contact.response_status and not existing.response_status:
+                        existing.response_status = contact.response_status
+                    if contact.notes and not existing.notes:
+                        existing.notes = contact.notes
+                    if contact.email and not existing.email:
+                        existing.email = contact.email
+                    if contact.primary_phone and not existing.primary_phone:
+                        existing.primary_phone = contact.primary_phone
+                    if contact.secondary_phone and not existing.secondary_phone:
+                        existing.secondary_phone = contact.secondary_phone
+                    if contact.mailing_address and not existing.mailing_address:
+                        existing.mailing_address = contact.mailing_address
+                    if contact.contact_type and not existing.contact_type:
+                        existing.contact_type = contact.contact_type
+                    # Delete the duplicate contact
+                    # First move its activities
+                    Activity.query.filter_by(contact_id=contact.id).update(
+                        {"contact_id": existing.id}
+                    )
+                    Task.query.filter_by(contact_id=contact.id).update(
+                        {"contact_id": existing.id}
+                    )
+                    db.session.delete(contact)
+                else:
+                    contact.case_id = keep.id
+
+            # Move activities from discard to keep
+            Activity.query.filter_by(case_id=discard.id).update(
+                {"case_id": keep.id}
+            )
+
+            # Move tasks from discard to keep
+            Task.query.filter_by(case_id=discard.id).update(
+                {"case_id": keep.id}
+            )
+
+            # Move transactions from discard to keep
+            Transaction.query.filter_by(case_id=discard.id).update(
+                {"case_id": keep.id}
+            )
+
+            # Backfill any missing data on keep from discard
+            if not keep.address or ("Property" in (keep.address or "")):
+                if discard.address and "Property" not in discard.address:
+                    keep.address = discard.address
+            if not keep.town and discard.town:
+                keep.town = discard.town
+            if not keep.case_url and discard.case_url:
+                keep.case_url = discard.case_url
+            if not keep.sf_account_id and discard.sf_account_id:
+                keep.sf_account_id = discard.sf_account_id
+            if not keep.sf_case_id and discard.sf_case_id:
+                keep.sf_case_id = discard.sf_case_id
+            if not keep.sale_date and discard.sale_date:
+                keep.sale_date = discard.sale_date
+            if not keep.notes and discard.notes:
+                keep.notes = discard.notes
+            if not keep.county and discard.county:
+                keep.county = discard.county
+
+            # Delete the duplicate case
+            db.session.delete(discard)
+            merged += 1
+
+    db.session.commit()
+    flash(f"Merged {merged} duplicate cases.", "success")
+    return redirect(url_for("admin_merge_duplicates"))
+
+
 @app.route("/admin/fix-sale-dates", methods=["GET", "POST"])
 @login_required
 @admin_required

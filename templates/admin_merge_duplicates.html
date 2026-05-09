@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Merge Duplicates — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Merge Duplicate Cases</h1>
+    <p class="text-muted" style="font-size:0.85rem;">Cases with matching docket numbers (ignoring format differences) that were created by both the hot lead seed and SF import.</p>
+</div>
+
+{% if duplicates %}
+<div class="card card-custom mb-3">
+    <div class="card-body">
+        <h6 class="fw-bold mb-3">Found {{ duplicates|length }} duplicate groups</h6>
+        <table class="table table-sm" style="font-size:0.8rem;">
+            <thead><tr><th>Docket</th><th>Copies</th><th>Addresses</th><th>Contacts</th></tr></thead>
+            <tbody>
+            {% for key, cases in duplicates.items() %}
+            <tr>
+                <td>{{ cases[0].docket_number }}</td>
+                <td>{{ cases|length }}</td>
+                <td>
+                    {% for c in cases %}
+                    <div{% if 'Property' in (c.address or '') %} class="text-danger"{% endif %}>
+                        {{ c.address or 'No address' }}
+                        {% if c.sf_account_id %}<span class="badge bg-info badge-status">SF</span>{% endif %}
+                    </div>
+                    {% endfor %}
+                </td>
+                <td>
+                    {% for c in cases %}
+                    <div>{{ c.contacts.count() }} contacts</div>
+                    {% endfor %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <form method="POST" class="mt-3">
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Merge {{ duplicates|length }} duplicate groups? This keeps the SF-imported version and moves all contacts/activities to it.')">
+                Merge All {{ duplicates|length }} Duplicate Groups
+            </button>
+        </form>
+        <div style="font-size:0.75rem;color:#94a3b8;" class="mt-2">
+            For each group: keeps the version with the real address (SF import), moves all contacts, activities, and tasks to it, then deletes the placeholder copy.
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card card-custom">
+    <div class="card-body">
+        <p class="text-success mb-0">No duplicate cases found. Everything looks clean!</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
