@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Fix Sale Dates — TriPoint CRM{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Sale Date Cleanup</h1>
+    <p class="text-muted" style="font-size:0.85rem;">CT foreclosure sale dates are always on Saturdays. Many imported dates are quarter-end placeholders from Salesforce.</p>
+</div>
+
+<div class="row g-4">
+    <!-- Summary -->
+    <div class="col-md-4">
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Summary</h6>
+                <table class="table table-sm table-borderless mb-0" style="font-size:0.85rem;">
+                    <tr><td class="text-muted">Total with sale dates</td><td class="fw-bold">{{ cases_with_dates|length }}</td></tr>
+                    <tr><td class="text-danger">Quarter-end placeholders</td><td class="fw-bold text-danger">{{ quarter_end|length }}</td></tr>
+                    <tr><td class="text-warning">Other non-Saturday</td><td class="fw-bold text-warning">{{ non_saturday|length }}</td></tr>
+                    <tr><td class="text-success">Valid upcoming (Sat)</td><td class="fw-bold text-success">{{ valid_upcoming|length }}</td></tr>
+                    <tr><td class="text-muted">Valid past (Sat)</td><td>{{ valid_past|length }}</td></tr>
+                    <tr class="border-top"><td class="text-primary">Status mismatches</td><td class="fw-bold text-primary">{{ mismatched|length }}</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Actions</h6>
+                {% if quarter_end %}
+                <form method="POST" class="mb-2">
+                    <input type="hidden" name="action" value="clear_bogus">
+                    <button type="submit" class="btn btn-sm btn-danger w-100" onclick="return confirm('Clear {{ quarter_end|length }} quarter-end placeholder dates?')">
+                        Clear {{ quarter_end|length }} Quarter-End Placeholders
+                    </button>
+                </form>
+                {% endif %}
+                {% if non_saturday or quarter_end %}
+                <form method="POST" class="mb-2">
+                    <input type="hidden" name="action" value="clear_non_saturday">
+                    <button type="submit" class="btn btn-sm btn-warning w-100" onclick="return confirm('Clear all {{ (non_saturday|length) + (quarter_end|length) }} non-Saturday dates?')">
+                        Clear All {{ (non_saturday|length) + (quarter_end|length) }} Non-Saturday Dates
+                    </button>
+                </form>
+                {% endif %}
+                {% if mismatched %}
+                <form method="POST" class="mb-2">
+                    <input type="hidden" name="action" value="fix_statuses">
+                    <button type="submit" class="btn btn-sm btn-primary w-100" onclick="return confirm('Set {{ mismatched|length }} cases to Sale Date Set?')">
+                        Fix {{ mismatched|length }} Status Mismatches
+                    </button>
+                </form>
+                {% endif %}
+                {% if not quarter_end and not non_saturday and not mismatched %}
+                <p class="text-success mb-0" style="font-size:0.85rem;">All sale dates look clean!</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Details -->
+    <div class="col-md-8">
+        {% if quarter_end %}
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3 text-danger">Quarter-End Placeholders ({{ quarter_end|length }})</h6>
+                <p style="font-size:0.8rem;color:#64748b;">These are likely Salesforce CloseDate defaults (3/31, 6/30, 9/30, 12/31) — not real judicial sale dates.</p>
+                <table class="table table-sm" style="font-size:0.8rem;">
+                    <thead><tr><th>Address</th><th>Town</th><th>Date</th><th>Day</th><th>Status</th></tr></thead>
+                    <tbody>
+                    {% for c in quarter_end %}
+                    <tr>
+                        <td><a href="{{ url_for('case_detail', case_id=c.id) }}">{{ c.address or c.docket_number }}</a></td>
+                        <td>{{ c.town }}</td>
+                        <td>{{ c.sale_date.strftime('%b %d, %Y') }}</td>
+                        <td>{{ c.sale_date.strftime('%A') }}</td>
+                        <td>{{ c.status }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if non_saturday %}
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3 text-warning">Other Non-Saturday Dates ({{ non_saturday|length }})</h6>
+                <table class="table table-sm" style="font-size:0.8rem;">
+                    <thead><tr><th>Address</th><th>Town</th><th>Date</th><th>Day</th><th>Status</th></tr></thead>
+                    <tbody>
+                    {% for c in non_saturday %}
+                    <tr>
+                        <td><a href="{{ url_for('case_detail', case_id=c.id) }}">{{ c.address or c.docket_number }}</a></td>
+                        <td>{{ c.town }}</td>
+                        <td>{{ c.sale_date.strftime('%b %d, %Y') }}</td>
+                        <td>{{ c.sale_date.strftime('%A') }}</td>
+                        <td>{{ c.status }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if mismatched %}
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3 text-primary">Status Mismatches ({{ mismatched|length }})</h6>
+                <p style="font-size:0.8rem;color:#64748b;">These have valid future Saturday sale dates but aren't marked "Sale Date Set".</p>
+                <table class="table table-sm" style="font-size:0.8rem;">
+                    <thead><tr><th>Address</th><th>Town</th><th>Sale Date</th><th>Current Status</th></tr></thead>
+                    <tbody>
+                    {% for c in mismatched %}
+                    <tr>
+                        <td><a href="{{ url_for('case_detail', case_id=c.id) }}">{{ c.address or c.docket_number }}</a></td>
+                        <td>{{ c.town }}</td>
+                        <td>{{ c.sale_date.strftime('%b %d, %Y') }}</td>
+                        <td><span class="badge bg-secondary">{{ c.status }}</span></td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if valid_upcoming %}
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3 text-success">Valid Upcoming Sale Dates ({{ valid_upcoming|length }})</h6>
+                <table class="table table-sm" style="font-size:0.8rem;">
+                    <thead><tr><th>Address</th><th>Town</th><th>Sale Date</th><th>Status</th></tr></thead>
+                    <tbody>
+                    {% for c in valid_upcoming %}
+                    <tr>
+                        <td><a href="{{ url_for('case_detail', case_id=c.id) }}">{{ c.address or c.docket_number }}</a></td>
+                        <td>{{ c.town }}</td>
+                        <td>{{ c.sale_date.strftime('%b %d, %Y') }}</td>
+                        <td>{{ c.status }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

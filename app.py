@@ -348,6 +348,84 @@ def update_case_notes(case_id):
     return redirect(url_for("case_detail", case_id=case.id))
 
 
+@app.route("/case/<int:case_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_case(case_id):
+    case = db.session.get(Case, case_id) or abort(404)
+    if request.method == "POST":
+        old_address = case.address
+        old_status = case.status
+        old_sale_date = case.sale_date
+
+        case.address = request.form.get("address", "").strip() or case.address
+        case.town = request.form.get("town", "").strip() or case.town
+        case.docket_number = request.form.get("docket_number", "").strip() or case.docket_number
+        case.county = request.form.get("county", "").strip() or None
+        case.property_type = request.form.get("property_type", "").strip() or None
+        case.case_url = request.form.get("case_url", "").strip() or None
+        case.notes = request.form.get("notes", "").strip() or None
+        case.lead_type = request.form.get("lead_type", case.lead_type)
+
+        # Status change
+        new_status = request.form.get("status", case.status)
+        if new_status != old_status:
+            case.status = new_status
+            case.status_date = date.today()
+            if new_status in ("Closed", "Dismissed"):
+                case.date_closed = date.today()
+            act = Activity(
+                case_id=case.id, activity_type="note",
+                subject=f"Status changed: {old_status} → {new_status}",
+                created_by_id=current_user.id,
+            )
+            db.session.add(act)
+
+        # Assignment
+        assignee_id = request.form.get("assigned_to_id")
+        case.assigned_to_id = int(assignee_id) if assignee_id else None
+
+        # Sale date
+        sale_date_str = request.form.get("sale_date", "").strip()
+        if sale_date_str:
+            new_sale_date = date.fromisoformat(sale_date_str)
+            if new_sale_date != old_sale_date:
+                case.sale_date = new_sale_date
+                # Auto-set status if a valid future sale date is set
+                if new_sale_date >= date.today() and case.status in ("New Case", "Motion for Foreclosure", "Judgment of Foreclosure"):
+                    case.status = "Sale Date Set"
+                    case.status_date = date.today()
+                elif new_sale_date >= date.today() and old_sale_date and case.status == "Sale Date Set":
+                    case.status = "Sale Date Extended"
+                    case.status_date = date.today()
+                act = Activity(
+                    case_id=case.id, activity_type="note",
+                    subject=f"Sale date {'updated' if old_sale_date else 'set'}: {new_sale_date.strftime('%b %d, %Y')}",
+                    description=f"Previous: {old_sale_date.strftime('%b %d, %Y') if old_sale_date else 'None'}",
+                    created_by_id=current_user.id,
+                )
+                db.session.add(act)
+                if new_sale_date.weekday() != 5:
+                    flash(f"Warning: {new_sale_date.strftime('%b %d, %Y')} is not a Saturday. CT foreclosure sales are always on Saturdays.", "warning")
+        else:
+            case.sale_date = None
+
+        # Log address change
+        if case.address != old_address and old_address:
+            act = Activity(
+                case_id=case.id, activity_type="note",
+                subject=f"Address updated: {old_address} → {case.address}",
+                created_by_id=current_user.id,
+            )
+            db.session.add(act)
+
+        db.session.commit()
+        flash("Lead updated.", "success")
+        return redirect(url_for("case_detail", case_id=case.id))
+
+    users = User.query.filter_by(is_active=True).order_by(User.name).all()
+    return render_template("case_form.html", case=case, users=users)
+
+
 @app.route("/case/<int:case_id>/log-activity", methods=["POST"])
 @login_required
 def log_case_activity(case_id):
@@ -965,6 +1043,86 @@ def admin_import_tasks():
         <a href="/" class="btn btn-outline-secondary btn-lg mt-3">Back to Dashboard</a>
         </div></body></html>
         """
+
+
+@app.route("/admin/fix-sale-dates", methods=["GET", "POST"])
+@login_required
+@admin_required
+def admin_fix_sale_dates():
+    """Review and clean up bogus sale dates. Admin only."""
+    # Gather stats
+    cases_with_dates = Case.query.filter(
+        Case.sale_date.isnot(None), Case.date_closed.is_(None)
+    ).order_by(Case.sale_date).all()
+
+    # Categorize
+    non_saturday = []
+    quarter_end = []
+    valid_upcoming = []
+    valid_past = []
+    quarter_ends = {(3, 31), (6, 30), (9, 30), (12, 31)}
+
+    for c in cases_with_dates:
+        sd = c.sale_date
+        is_qe = (sd.month, sd.day) in quarter_ends
+        is_sat = sd.weekday() == 5
+
+        if is_qe and not is_sat:
+            quarter_end.append(c)
+        elif not is_sat:
+            non_saturday.append(c)
+        elif sd >= date.today():
+            valid_upcoming.append(c)
+        else:
+            valid_past.append(c)
+
+    # Cases with status mismatch (have future sale date but not "Sale Date Set")
+    mismatched = [c for c in valid_upcoming if c.status not in ("Sale Date Set", "Sale Date Extended")]
+
+    if request.method == "GET":
+        return render_template(
+            "admin_fix_sale_dates.html",
+            cases_with_dates=cases_with_dates,
+            quarter_end=quarter_end,
+            non_saturday=non_saturday,
+            valid_upcoming=valid_upcoming,
+            valid_past=valid_past,
+            mismatched=mismatched,
+        )
+
+    # POST — apply fixes
+    action = request.form.get("action", "")
+    fixed = 0
+
+    if action == "clear_bogus":
+        # Clear quarter-end placeholder dates
+        for c in quarter_end:
+            c.sale_date = None
+            fixed += 1
+
+    elif action == "clear_non_saturday":
+        # Clear all non-Saturday dates
+        for c in non_saturday + quarter_end:
+            c.sale_date = None
+            fixed += 1
+
+    elif action == "fix_statuses":
+        # Update status for cases with valid future sale dates
+        for c in mismatched:
+            old = c.status
+            c.status = "Sale Date Set"
+            c.status_date = date.today()
+            act = Activity(
+                case_id=c.id, activity_type="note",
+                subject=f"Status auto-updated: {old} → Sale Date Set (has sale date {c.sale_date.strftime('%b %d, %Y')})",
+                created_by_id=current_user.id,
+            )
+            db.session.add(act)
+            fixed += 1
+
+    db.session.commit()
+    flash(f"Fixed {fixed} records.", "success")
+    return redirect(url_for("admin_fix_sale_dates"))
 
 
 with app.app_context():
