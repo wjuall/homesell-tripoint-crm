@@ -25,10 +25,12 @@ class User(UserMixin, db.Model):
 
 
 class Case(db.Model):
-    """Foreclosure case from CT Judicial."""
+    """Lead — foreclosure case, multifamily, or other lead type."""
     __tablename__ = "cases"
     id = db.Column(db.Integer, primary_key=True)
-    docket_number = db.Column(db.String(30), unique=True, index=True)
+    docket_number = db.Column(db.String(30), unique=True, nullable=True, index=True)
+    lead_type = db.Column(db.String(40), default="Foreclosure", index=True)
+    # Foreclosure, 2-4 Unit Multifamily, Commercial, Land, Short Sale, etc.
     address = db.Column(db.String(200))
     town = db.Column(db.String(60), index=True)
     county = db.Column(db.String(40))
@@ -89,7 +91,9 @@ class Transaction(db.Model):
     name = db.Column(db.String(200))  # e.g. "123 Main St — Listing"
     property_address = db.Column(db.String(200))
     town = db.Column(db.String(60))
-    transaction_type = db.Column(db.String(30))  # listing, flip, purchase, foreclosure
+    transaction_type = db.Column(db.String(40), index=True)
+    # Retail Listing, Off Market Listing, Wholesale, Rehab Project,
+    # Purchase, Referral, Buyer Representation, Surplus Funds
     stage = db.Column(db.String(40), default="New")
     # Stages: New → Working → Appointment Set → Offer Made → Follow Up on Offer
     #       → Contract Signed → Under Construction → Active Listing → Closed Won / Closed Lost

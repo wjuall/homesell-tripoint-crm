@@ -47,11 +47,21 @@ PIPELINE_STATUSES = [
     "Trial Date Set", "Surplus Funds", "On Hold",
 ]
 
+LEAD_TYPES = [
+    "Foreclosure", "2-4 Unit Multifamily", "Commercial", "Land",
+    "Short Sale", "Probate", "Pre-Foreclosure", "Other",
+]
+
+TRANSACTION_TYPES = [
+    "Retail Listing", "Off Market Listing", "Wholesale", "Rehab Project",
+    "Purchase", "Referral", "Buyer Representation", "Surplus Funds",
+]
+
 TRANSACTION_STAGES = [
     "New", "Working", "Long Term Follow Up", "Appointment Set",
     "Offer Made", "Follow Up on Offer", "Contract Signed",
-    "Under Construction", "Active Listing", "Sent to Attorneys",
-    "Closed Won", "Closed Lost", "Revert",
+    "Under Construction", "Active Listing", "Listing Agreement Signed",
+    "Sent to Attorneys", "Closed Won", "Closed Lost", "Revert",
 ]
 
 RESPONSE_LABELS = {
@@ -71,6 +81,8 @@ def inject_globals():
     return {
         "now": datetime.utcnow(),
         "pipeline_statuses": PIPELINE_STATUSES,
+        "lead_types_list": LEAD_TYPES,
+        "transaction_types_list": TRANSACTION_TYPES,
         "transaction_stages": TRANSACTION_STAGES,
         "response_labels": RESPONSE_LABELS,
     }
@@ -154,6 +166,7 @@ def dashboard():
 def pipeline():
     status_filter = request.args.get("status", "")
     town_filter = request.args.get("town", "")
+    lead_type_filter = request.args.get("lead_type", "")
     search = request.args.get("q", "")
     page = request.args.get("page", 1, type=int)
 
@@ -163,6 +176,8 @@ def pipeline():
         query = query.filter_by(status=status_filter)
     if town_filter:
         query = query.filter_by(town=town_filter)
+    if lead_type_filter:
+        query = query.filter_by(lead_type=lead_type_filter)
     if search:
         query = query.filter(
             db.or_(
@@ -181,6 +196,12 @@ def pipeline():
     ).distinct().order_by(Case.town).all()
     towns = [t[0] for t in towns if t[0]]
 
+    # Get distinct lead types for filter
+    lead_types_in_use = db.session.query(Case.lead_type).filter(
+        Case.date_closed.is_(None), Case.lead_type.isnot(None)
+    ).distinct().order_by(Case.lead_type).all()
+    lead_types_in_use = [lt[0] for lt in lead_types_in_use if lt[0]]
+
     # Pipeline counts for sidebar
     pipeline_counts = {}
     for status in PIPELINE_STATUSES:
@@ -192,9 +213,11 @@ def pipeline():
         "pipeline.html",
         cases=cases,
         towns=towns,
+        lead_types=lead_types_in_use,
         pipeline_counts=pipeline_counts,
         status_filter=status_filter,
         town_filter=town_filter,
+        lead_type_filter=lead_type_filter,
         search=search,
     )
 
@@ -334,6 +357,7 @@ def transactions_list():
     return render_template(
         "transactions.html", transactions=txns,
         show_closed=show_closed, type_filter=type_filter,
+        transaction_types=TRANSACTION_TYPES,
     )
 
 
@@ -358,7 +382,7 @@ def new_transaction():
         flash("Transaction created.", "success")
         return redirect(url_for("transaction_detail", txn_id=txn.id))
     users = User.query.filter_by(is_active=True).all()
-    return render_template("transaction_form.html", txn=None, users=users)
+    return render_template("transaction_form.html", txn=None, users=users, transaction_types=TRANSACTION_TYPES)
 
 
 @app.route("/transaction/<int:txn_id>")
@@ -404,7 +428,7 @@ def edit_transaction(txn_id):
         flash("Transaction updated.", "success")
         return redirect(url_for("transaction_detail", txn_id=txn.id))
     users = User.query.filter_by(is_active=True).all()
-    return render_template("transaction_form.html", txn=txn, users=users)
+    return render_template("transaction_form.html", txn=txn, users=users, transaction_types=TRANSACTION_TYPES)
 
 
 # ── Leads Board ──────────────────────────────────────────────────────────────
@@ -542,6 +566,78 @@ def import_sf_command():
     """Import Salesforce export data."""
     from import_salesforce import run_import
     run_import(db.session)
+
+
+# ── One-time admin import route ──────────────────────────────────────────────
+
+@app.route("/admin/import-sf", methods=["GET", "POST"])
+@login_required
+@admin_required
+def admin_import_sf():
+    """One-time import of Salesforce data. Admin only."""
+    if request.method == "GET":
+        case_count = Case.query.count()
+        txn_count = Transaction.query.count()
+        contact_count = Contact.query.count()
+        return f"""
+        <html><head><title>SF Import</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head><body class="bg-light p-5">
+        <div class="container" style="max-width:600px;">
+        <h2>Salesforce Import</h2>
+        <div class="alert alert-info">
+            <strong>Current data:</strong> {case_count} leads, {contact_count} contacts, {txn_count} transactions
+        </div>
+        <p>This will import:</p>
+        <ul>
+            <li><strong>144 leads</strong> (open SF Opportunities of type "Opportunity")</li>
+            <li><strong>19 transactions</strong> (Retail Listing, Rehab Project, Wholesale, etc.)</li>
+            <li><strong>~241 contacts</strong> linked to those opportunities</li>
+            <li><strong>8 hot SMS leads</strong> from recent outreach</li>
+        </ul>
+        <form method="POST">
+            <button type="submit" class="btn btn-primary btn-lg">Run Import</button>
+            <a href="/" class="btn btn-outline-secondary btn-lg ms-2">Cancel</a>
+        </form>
+        </div></body></html>
+        """
+
+    # POST — run the import
+    import io, sys
+    from import_selective import run_selective_import
+
+    sf_dir = os.path.join(os.path.dirname(__file__), "sf_data")
+    output = io.StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = output
+
+    try:
+        run_selective_import(db.session, sf_dir)
+        sys.stdout = old_stdout
+        log = output.getvalue()
+        return f"""
+        <html><head><title>Import Complete</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head><body class="bg-light p-5">
+        <div class="container" style="max-width:700px;">
+        <h2 class="text-success">Import Complete!</h2>
+        <pre style="background:#1e293b;color:#e2e8f0;padding:20px;border-radius:8px;font-size:0.85rem;">{log}</pre>
+        <a href="/" class="btn btn-primary btn-lg mt-3">Go to Dashboard</a>
+        </div></body></html>
+        """
+    except Exception as e:
+        sys.stdout = old_stdout
+        log = output.getvalue()
+        return f"""
+        <html><head><title>Import Error</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head><body class="bg-light p-5">
+        <div class="container" style="max-width:700px;">
+        <h2 class="text-danger">Import Error</h2>
+        <pre style="background:#1e293b;color:#e2e8f0;padding:20px;border-radius:8px;">{log}\n\nERROR: {e}</pre>
+        <a href="/" class="btn btn-outline-secondary btn-lg mt-3">Back to Dashboard</a>
+        </div></body></html>
+        """
 
 
 with app.app_context():
