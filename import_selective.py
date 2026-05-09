@@ -114,6 +114,39 @@ def run_selective_import(session, sf_dir="sf_export"):
 
     print(f"  Linked accounts: {len(relevant_account_ids)}")
 
+    # ── Step 1b: Build lookup tables from Case.csv and Account.csv ───────
+    # Docket + case_url from Case.csv (keyed by AccountId)
+    sf_case_lookup = {}  # AccountId → {docket, case_url, sf_status}
+    case_file = os.path.join(sf_dir, "Case.csv")
+    if os.path.exists(case_file):
+        with open_csv(case_file) as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                acct = row.get("AccountId", "")
+                docket = row.get("Docket_Number__c", "").strip()
+                if acct and docket:
+                    sf_case_lookup[acct] = {
+                        "docket": docket,
+                        "case_url": row.get("Case_Link__c", "").strip(),
+                        "sf_status": row.get("Status", ""),
+                        "sf_case_id": row.get("Id", ""),
+                        "sale_date": row.get("Sale_Date__c", ""),
+                    }
+        print(f"  SF cases with docket numbers: {len(sf_case_lookup)}")
+
+    # Town from Account.csv (BillingCity, keyed by AccountId)
+    sf_town_lookup = {}  # AccountId → town
+    account_file = os.path.join(sf_dir, "Account.csv")
+    if os.path.exists(account_file):
+        with open_csv(account_file) as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                acct_id = row.get("Id", "")
+                city = row.get("BillingCity", "").strip()
+                if acct_id and city:
+                    sf_town_lookup[acct_id] = city
+        print(f"  SF accounts with town/city: {len(sf_town_lookup)}")
+
     # ── Step 2: Import leads as Cases ────────────────────────────────────
     print(f"\n── Importing {len(lead_opps)} leads as Cases ──")
 
@@ -125,42 +158,55 @@ def run_selective_import(session, sf_dir="sf_export"):
         account_id = row.get("AccountId", "")
         name = row.get("Name", "").strip()
         stage = row.get("StageName", "New")
-
-        # Parse address from opportunity name (format: "123 Main St City, CT ZIP")
         address = name
-        town = ""
-        # Try to extract town from name
-        parts = name.split(",")
-        if len(parts) >= 2:
-            # "123 Main St City" , " CT ZIP"
-            pre_comma = parts[0].strip()
-            # Town is usually the last word(s) before the comma
-            words = pre_comma.split()
-            if len(words) >= 3:
-                # Last 1-2 words before comma might be town
-                # But address format varies, so keep full name as address
-                pass
+
+        # Get town from Account lookup
+        town = sf_town_lookup.get(account_id, "")
+
+        # Get docket + case_url from Case lookup
+        sf_case = sf_case_lookup.get(account_id, {})
+        docket = sf_case.get("docket")
+        case_url = sf_case.get("case_url")
+        sale_date_str = sf_case.get("sale_date", "")
+        sf_case_id = sf_case.get("sf_case_id")
 
         status = STAGE_TO_LEAD_STATUS.get(stage, stage)
 
         # Check for existing
         existing = None
-        if account_id:
+        if docket:
+            existing = Case.query.filter_by(docket_number=docket).first()
+        if not existing and account_id:
             existing = Case.query.filter_by(sf_account_id=account_id).first()
 
         if existing:
+            # Backfill missing data on existing records
+            if docket and not existing.docket_number:
+                existing.docket_number = docket
+            if case_url and not existing.case_url:
+                existing.case_url = case_url
+            if town and not existing.town:
+                existing.town = town
+            if sf_case_id and not existing.sf_case_id:
+                existing.sf_case_id = sf_case_id
+            if sale_date_str and not existing.sale_date:
+                existing.sale_date = parse_date(sale_date_str)
             case_by_account[account_id] = existing.id
             opp_to_case[row.get("Id")] = existing.id
             continue
 
         case = Case(
+            docket_number=docket,
             address=address or None,
+            town=town or None,
             lead_type="Foreclosure",  # All current SF leads are foreclosure
             status=status,
+            case_url=case_url or None,
             status_date=parse_date(row.get("LastModifiedDate")),
-            sale_date=parse_date(row.get("CloseDate")),
+            sale_date=parse_date(sale_date_str) if sale_date_str else parse_date(row.get("CloseDate")),
             date_added=parse_date(row.get("CreatedDate")),
             source="salesforce",
+            sf_case_id=sf_case_id,
             sf_account_id=account_id or None,
             notes=row.get("Description") or None,
         )

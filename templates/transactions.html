@@ -9,14 +9,13 @@
 
 <div class="card card-custom mb-3">
     <div class="card-body py-2">
-        <div class="d-flex gap-2 align-items-center">
-            <a href="{{ url_for('transactions_list') }}" class="btn btn-sm {% if not show_closed and not type_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <a href="{{ url_for('transactions_list') }}" class="btn btn-sm {% if not show_closed and not type_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">All Active</a>
             <a href="{{ url_for('transactions_list', closed='1') }}" class="btn btn-sm {% if show_closed %}btn-primary{% else %}btn-outline-secondary{% endif %}">Closed</a>
             <span class="text-muted mx-2">|</span>
-            <a href="{{ url_for('transactions_list', type='listing') }}" class="btn btn-sm {% if type_filter == 'listing' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Listings</a>
-            <a href="{{ url_for('transactions_list', type='flip') }}" class="btn btn-sm {% if type_filter == 'flip' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Flips</a>
-            <a href="{{ url_for('transactions_list', type='purchase') }}" class="btn btn-sm {% if type_filter == 'purchase' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Purchases</a>
-            <a href="{{ url_for('transactions_list', type='foreclosure') }}" class="btn btn-sm {% if type_filter == 'foreclosure' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Foreclosure</a>
+            {% for ttype in transaction_types %}
+            <a href="{{ url_for('transactions_list', type=ttype) }}" class="btn btn-sm {% if type_filter == ttype %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ ttype }}</a>
+            {% endfor %}
         </div>
     </div>
 </div>

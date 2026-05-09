@@ -31,8 +31,8 @@
                 <div class="col-md-4">
                     <label class="form-label">Type</label>
                     <select name="transaction_type" class="form-select">
-                        {% for t in ['listing', 'flip', 'purchase', 'foreclosure', 'referral'] %}
-                        <option value="{{ t }}" {% if txn and txn.transaction_type == t %}selected{% endif %}>{{ t|title }}</option>
+                        {% for t in transaction_types %}
+                        <option value="{{ t }}" {% if txn and txn.transaction_type == t %}selected{% endif %}>{{ t }}</option>
                         {% endfor %}
                     </select>
                 </div>

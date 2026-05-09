@@ -60,6 +60,22 @@
             </div>
         </div>
 
+        <!-- Convert to Transaction -->
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">Convert to Transaction</h6>
+                <form method="POST" action="{{ url_for('convert_to_transaction', case_id=case.id) }}">
+                    <select name="transaction_type" class="form-select form-select-sm mb-2">
+                        {% for t in transaction_types_list %}
+                        <option value="{{ t }}">{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-success w-100"><i class="bi bi-arrow-right-circle"></i> Convert</button>
+                </form>
+                <div style="font-size:0.75rem;color:#94a3b8;" class="mt-1">Creates a transaction linked to this lead with its contacts and case info.</div>
+            </div>
+        </div>
+
         <div class="card card-custom mb-3">
             <div class="card-body">
                 <h6 class="fw-bold mb-2">Notes</h6>

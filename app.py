@@ -265,6 +265,44 @@ def update_case_status(case_id):
     return redirect(url_for("case_detail", case_id=case.id))
 
 
+@app.route("/case/<int:case_id>/convert", methods=["POST"])
+@login_required
+def convert_to_transaction(case_id):
+    case = db.session.get(Case, case_id) or abort(404)
+    txn_type = request.form.get("transaction_type", "Retail Listing")
+
+    # Create transaction linked to this case
+    txn = Transaction(
+        name=f"{case.address or case.docket_number} — {txn_type}",
+        property_address=case.address,
+        town=case.town,
+        transaction_type=txn_type,
+        stage="New",
+        case_id=case.id,
+        assigned_to_id=current_user.id,
+    )
+
+    # Link to primary contact if one exists
+    primary_contact = case.contacts.first()
+    if primary_contact:
+        txn.contact_id = primary_contact.id
+
+    db.session.add(txn)
+
+    # Log activity on the case
+    act = Activity(
+        case_id=case.id,
+        activity_type="note",
+        subject=f"Converted to {txn_type} transaction",
+        created_by_id=current_user.id,
+    )
+    db.session.add(act)
+    db.session.commit()
+
+    flash(f"Transaction created: {txn.name}", "success")
+    return redirect(url_for("transaction_detail", txn_id=txn.id))
+
+
 @app.route("/case/<int:case_id>/notes", methods=["POST"])
 @login_required
 def update_case_notes(case_id):

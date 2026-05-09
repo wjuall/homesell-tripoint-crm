@@ -47,6 +47,29 @@
             </div>
         </div>
 
+        {% if txn.case %}
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">Linked Lead</h6>
+                <a href="{{ url_for('case_detail', case_id=txn.case.id) }}" class="text-decoration-none">
+                    <div class="fw-semibold">{{ txn.case.address or 'No address' }}</div>
+                </a>
+                <table class="table table-sm table-borderless mb-0 mt-1" style="font-size:0.8rem;">
+                    {% if txn.case.docket_number %}
+                    <tr><td class="text-muted" style="width:30%;">Docket</td><td>{{ txn.case.docket_number }}</td></tr>
+                    {% endif %}
+                    {% if txn.case.town %}
+                    <tr><td class="text-muted">Town</td><td>{{ txn.case.town }}</td></tr>
+                    {% endif %}
+                    <tr><td class="text-muted">Status</td><td>{{ txn.case.status }}</td></tr>
+                    {% if txn.case.case_url %}
+                    <tr><td class="text-muted">Judicial</td><td><a href="{{ txn.case.case_url }}" target="_blank">View Case <i class="bi bi-box-arrow-up-right"></i></a></td></tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
         {% if txn.contact %}
         <div class="card card-custom mb-3">
             <div class="card-body">
@@ -54,6 +77,9 @@
                 <a href="{{ url_for('contact_detail', contact_id=txn.contact.id) }}" class="text-decoration-none">
                     {{ txn.contact.name }}
                 </a>
+                {% if txn.contact.primary_phone %}
+                <div style="font-size:0.8rem;color:#64748b;"><i class="bi bi-phone"></i> {{ txn.contact.primary_phone }}</div>
+                {% endif %}
             </div>
         </div>
         {% endif %}
