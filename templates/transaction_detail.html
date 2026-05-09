@@ -58,20 +58,55 @@
         </div>
         {% endif %}
 
-        {% if txn.notes %}
         <div class="card card-custom">
             <div class="card-body">
                 <h6 class="fw-bold mb-2">Notes</h6>
-                <p style="font-size:0.85rem;white-space:pre-wrap;">{{ txn.notes }}</p>
+                <form method="POST" action="{{ url_for('update_transaction_notes', txn_id=txn.id) }}">
+                    <textarea name="notes" class="form-control form-control-sm mb-2" rows="4" placeholder="Add notes about this transaction...">{{ txn.notes or '' }}</textarea>
+                    <button type="submit" class="btn btn-sm btn-outline-primary w-100">Save Notes</button>
+                </form>
             </div>
         </div>
-        {% endif %}
     </div>
 
     <div class="col-md-7">
+        <!-- Log Activity Form -->
+        <div class="card card-custom mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3">Log Activity</h6>
+                <form method="POST" action="{{ url_for('log_transaction_activity', txn_id=txn.id) }}">
+                    <div class="row g-2 mb-2">
+                        <div class="col-4">
+                            <select name="type" class="form-select form-select-sm">
+                                <option value="note" selected>Note</option>
+                                <option value="call">Call</option>
+                                <option value="sms">SMS</option>
+                                <option value="email">Email</option>
+                                <option value="meeting">Meeting</option>
+                                <option value="task">Task</option>
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <select name="direction" class="form-select form-select-sm">
+                                <option value="">N/A</option>
+                                <option value="outbound">Outbound</option>
+                                <option value="inbound">Inbound</option>
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <input type="date" name="due_date" class="form-control form-control-sm" placeholder="Due date">
+                        </div>
+                    </div>
+                    <input type="text" name="subject" class="form-control form-control-sm mb-2" placeholder="Subject" required>
+                    <textarea name="description" class="form-control form-control-sm mb-2" rows="2" placeholder="Details (optional)"></textarea>
+                    <button type="submit" class="btn btn-sm btn-primary w-100">Log Activity</button>
+                </form>
+            </div>
+        </div>
+
         <div class="card card-custom">
             <div class="card-body">
-                <h6 class="fw-bold mb-3">Activity</h6>
+                <h6 class="fw-bold mb-3">Activity History</h6>
                 <div class="activity-timeline">
                     {% for act in activities %}
                     <div class="activity-item">

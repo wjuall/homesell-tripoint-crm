@@ -106,9 +106,41 @@
     </div>
 </div>
 
-<!-- Recent Activity -->
+<!-- My Tasks + Recent Activity -->
 <div class="row mt-4">
-    <div class="col-md-8">
+    <!-- My Tasks -->
+    <div class="col-md-4">
+        <div class="card card-custom mb-4">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <h6 class="fw-bold mb-0">My Tasks</h6>
+                    <a href="{{ url_for('tasks_list') }}" class="ms-auto" style="font-size:0.8rem;">View all</a>
+                </div>
+                {% for task in my_tasks %}
+                <div class="d-flex align-items-start mb-2 pb-2 {% if not loop.last %}border-bottom{% endif %}">
+                    <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" class="me-2" style="margin-top:2px;">
+                        <input type="hidden" name="next" value="{{ url_for('dashboard') }}">
+                        <button type="submit" class="btn btn-sm btn-outline-success p-0 px-1" title="Complete"><i class="bi bi-check-lg"></i></button>
+                    </form>
+                    <div>
+                        <div style="font-size:0.85rem;" class="{% if task.priority == 'high' %}fw-bold text-danger{% endif %}">{{ task.title }}</div>
+                        <div style="font-size:0.7rem;color:#94a3b8;">
+                            {% if task.due_date %}
+                            <span class="{% if task.due_date < now.date() %}text-danger{% endif %}">Due {{ task.due_date.strftime('%b %d') }}</span>
+                            {% endif %}
+                            {% if task.case %} — {{ task.case.address or task.case.docket_number }}{% endif %}
+                            {% if task.contact %} — {{ task.contact.name }}{% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted" style="font-size:0.85rem;">No open tasks. Nice work!</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
         <div class="card card-custom">
             <div class="card-body">
                 <h6 class="fw-bold mb-3">Recent Activity</h6>

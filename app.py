@@ -13,7 +13,7 @@ from flask_login import (
     LoginManager, login_user, logout_user, login_required, current_user,
 )
 from config import Config
-from models import db, User, Case, Contact, Transaction, Activity
+from models import db, User, Case, Contact, Transaction, Activity, Task
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -147,6 +147,11 @@ def dashboard():
         Case.date_closed.is_(None),
     ).order_by(Case.sale_date).limit(10).all()
 
+    # Open tasks for current user
+    my_tasks = Task.query.filter_by(
+        assigned_to_id=current_user.id, status="open"
+    ).order_by(Task.due_date.asc().nullslast()).limit(10).all()
+
     return render_template(
         "dashboard.html",
         pipeline_counts=pipeline_counts,
@@ -156,6 +161,7 @@ def dashboard():
         recent=recent,
         active_txns=active_txns,
         upcoming_sales=upcoming_sales,
+        my_tasks=my_tasks,
     )
 
 
@@ -259,6 +265,35 @@ def update_case_status(case_id):
     return redirect(url_for("case_detail", case_id=case.id))
 
 
+@app.route("/case/<int:case_id>/notes", methods=["POST"])
+@login_required
+def update_case_notes(case_id):
+    case = db.session.get(Case, case_id) or abort(404)
+    case.notes = request.form.get("notes", "").strip() or None
+    db.session.commit()
+    flash("Notes saved.", "success")
+    return redirect(url_for("case_detail", case_id=case.id))
+
+
+@app.route("/case/<int:case_id>/log-activity", methods=["POST"])
+@login_required
+def log_case_activity(case_id):
+    case = db.session.get(Case, case_id) or abort(404)
+    act = Activity(
+        case_id=case.id,
+        activity_type=request.form.get("type", "note"),
+        subject=request.form.get("subject", ""),
+        description=request.form.get("description", ""),
+        direction=request.form.get("direction") or None,
+        status="completed",
+        created_by_id=current_user.id,
+    )
+    db.session.add(act)
+    db.session.commit()
+    flash("Activity logged.", "success")
+    return redirect(url_for("case_detail", case_id=case.id))
+
+
 # ── Contacts ─────────────────────────────────────────────────────────────────
 
 @app.route("/contacts")
@@ -336,6 +371,16 @@ def update_contact_status(contact_id):
     return redirect(url_for("contact_detail", contact_id=contact.id))
 
 
+@app.route("/contact/<int:contact_id>/notes", methods=["POST"])
+@login_required
+def update_contact_notes(contact_id):
+    contact = db.session.get(Contact, contact_id) or abort(404)
+    contact.notes = request.form.get("notes", "").strip() or None
+    db.session.commit()
+    flash("Notes saved.", "success")
+    return redirect(url_for("contact_detail", contact_id=contact.id))
+
+
 # ── Transactions ─────────────────────────────────────────────────────────────
 
 @app.route("/transactions")
@@ -395,6 +440,37 @@ def transaction_detail(txn_id):
     return render_template("transaction_detail.html", txn=txn, activities=activities)
 
 
+@app.route("/transaction/<int:txn_id>/notes", methods=["POST"])
+@login_required
+def update_transaction_notes(txn_id):
+    txn = db.session.get(Transaction, txn_id) or abort(404)
+    txn.notes = request.form.get("notes", "").strip() or None
+    db.session.commit()
+    flash("Notes saved.", "success")
+    return redirect(url_for("transaction_detail", txn_id=txn.id))
+
+
+@app.route("/transaction/<int:txn_id>/log-activity", methods=["POST"])
+@login_required
+def log_transaction_activity(txn_id):
+    txn = db.session.get(Transaction, txn_id) or abort(404)
+    act = Activity(
+        transaction_id=txn.id,
+        case_id=txn.case_id,
+        activity_type=request.form.get("type", "note"),
+        subject=request.form.get("subject", ""),
+        description=request.form.get("description", ""),
+        direction=request.form.get("direction") or None,
+        status="completed",
+        due_date=request.form.get("due_date") or None,
+        created_by_id=current_user.id,
+    )
+    db.session.add(act)
+    db.session.commit()
+    flash("Activity logged.", "success")
+    return redirect(url_for("transaction_detail", txn_id=txn.id))
+
+
 @app.route("/transaction/<int:txn_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_transaction(txn_id):
@@ -445,6 +521,79 @@ def leads():
     ).order_by(Contact.date_added.desc()).all()
 
     return render_template("leads.html", interested=interested, needs_help=needs_help)
+
+
+# ── Tasks ────────────────────────────────────────────────────────────────────
+
+@app.route("/tasks")
+@login_required
+def tasks_list():
+    show_completed = request.args.get("completed", "0") == "1"
+    filter_user = request.args.get("user", "")
+
+    query = Task.query
+    if not show_completed:
+        query = query.filter_by(status="open")
+    if filter_user:
+        query = query.filter_by(assigned_to_id=int(filter_user))
+
+    query = query.order_by(
+        Task.due_date.asc().nullslast(),
+        Task.priority.desc(),
+        Task.created_at.desc(),
+    )
+    tasks = query.all()
+    users = User.query.filter_by(is_active=True).all()
+
+    return render_template("tasks.html", tasks=tasks, users=users,
+                           show_completed=show_completed, filter_user=filter_user)
+
+
+@app.route("/tasks/new", methods=["POST"])
+@login_required
+def create_task():
+    task = Task(
+        title=request.form.get("title", "").strip(),
+        description=request.form.get("description", "").strip() or None,
+        priority=request.form.get("priority", "normal"),
+        due_date=request.form.get("due_date") or None,
+        assigned_to_id=int(request.form.get("assigned_to_id") or current_user.id),
+        created_by_id=current_user.id,
+        case_id=int(request.form.get("case_id")) if request.form.get("case_id") else None,
+        contact_id=int(request.form.get("contact_id")) if request.form.get("contact_id") else None,
+        transaction_id=int(request.form.get("transaction_id")) if request.form.get("transaction_id") else None,
+    )
+    db.session.add(task)
+    db.session.commit()
+    flash("Task created.", "success")
+
+    # Redirect back to referring page if present
+    next_url = request.form.get("next") or url_for("tasks_list")
+    return redirect(next_url)
+
+
+@app.route("/tasks/<int:task_id>/complete", methods=["POST"])
+@login_required
+def complete_task(task_id):
+    task = db.session.get(Task, task_id) or abort(404)
+    task.status = "completed"
+    task.completed_at = datetime.utcnow()
+    db.session.commit()
+    flash("Task completed.", "success")
+
+    next_url = request.form.get("next") or url_for("tasks_list")
+    return redirect(next_url)
+
+
+@app.route("/tasks/<int:task_id>/reopen", methods=["POST"])
+@login_required
+def reopen_task(task_id):
+    task = db.session.get(Task, task_id) or abort(404)
+    task.status = "open"
+    task.completed_at = None
+    db.session.commit()
+    flash("Task reopened.", "success")
+    return redirect(url_for("tasks_list", completed="1"))
 
 
 # ── Settings / User Management ───────────────────────────────────────────────

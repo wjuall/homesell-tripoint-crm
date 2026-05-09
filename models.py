@@ -144,3 +144,27 @@ class Activity(db.Model):
     sf_task_id = db.Column(db.String(18))
 
     created_by = db.relationship("User", backref="activities")
+
+
+class Task(db.Model):
+    """User task — follow-up, to-do, reminder."""
+    __tablename__ = "tasks"
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    priority = db.Column(db.String(10), default="normal")  # high, normal, low
+    status = db.Column(db.String(20), default="open", index=True)  # open, completed
+    due_date = db.Column(db.Date, index=True)
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey("users.id"), index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    case_id = db.Column(db.Integer, db.ForeignKey("cases.id"))
+    contact_id = db.Column(db.Integer, db.ForeignKey("contacts.id"))
+    transaction_id = db.Column(db.Integer, db.ForeignKey("transactions.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime)
+
+    assigned_to = db.relationship("User", foreign_keys=[assigned_to_id], backref="assigned_tasks")
+    created_by = db.relationship("User", foreign_keys=[created_by_id], backref="created_tasks")
+    case = db.relationship("Case", backref="tasks")
+    contact = db.relationship("Contact", backref="tasks")
+    transaction = db.relationship("Transaction", backref="tasks")
