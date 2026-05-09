@@ -173,6 +173,7 @@ def pipeline():
     status_filter = request.args.get("status", "")
     town_filter = request.args.get("town", "")
     lead_type_filter = request.args.get("lead_type", "")
+    assignee_filter = request.args.get("assignee", "")
     search = request.args.get("q", "")
     page = request.args.get("page", 1, type=int)
 
@@ -184,6 +185,11 @@ def pipeline():
         query = query.filter_by(town=town_filter)
     if lead_type_filter:
         query = query.filter_by(lead_type=lead_type_filter)
+    if assignee_filter:
+        if assignee_filter == "unassigned":
+            query = query.filter(Case.assigned_to_id.is_(None))
+        else:
+            query = query.filter_by(assigned_to_id=int(assignee_filter))
     if search:
         query = query.filter(
             db.or_(
@@ -215,15 +221,19 @@ def pipeline():
             Case.date_closed.is_(None)
         ).count()
 
+    users = User.query.filter_by(is_active=True).order_by(User.name).all()
+
     return render_template(
         "pipeline.html",
         cases=cases,
         towns=towns,
         lead_types=lead_types_in_use,
         pipeline_counts=pipeline_counts,
+        users=users,
         status_filter=status_filter,
         town_filter=town_filter,
         lead_type_filter=lead_type_filter,
+        assignee_filter=assignee_filter,
         search=search,
     )
 
@@ -237,9 +247,13 @@ def case_detail(case_id):
         Activity.activity_date.desc()
     ).limit(50).all()
     transactions = Transaction.query.filter_by(case_id=case.id).all()
+    tasks = Task.query.filter_by(case_id=case.id, status="open").order_by(
+        Task.due_date.asc().nullslast()
+    ).all()
+    users = User.query.filter_by(is_active=True).order_by(User.name).all()
     return render_template(
         "case_detail.html", case=case, contacts=contacts,
-        activities=activities, transactions=transactions,
+        activities=activities, transactions=transactions, tasks=tasks, users=users,
     )
 
 
@@ -262,6 +276,27 @@ def update_case_status(case_id):
         db.session.add(act)
         db.session.commit()
         flash(f"Status updated to {new_status}.", "success")
+    return redirect(url_for("case_detail", case_id=case.id))
+
+
+@app.route("/case/<int:case_id>/assign", methods=["POST"])
+@login_required
+def assign_case(case_id):
+    case = db.session.get(Case, case_id) or abort(404)
+    assignee_id = request.form.get("assigned_to_id")
+    if assignee_id:
+        user = db.session.get(User, int(assignee_id))
+        case.assigned_to_id = user.id if user else None
+        act = Activity(
+            case_id=case.id, activity_type="note",
+            subject=f"Lead assigned to {user.name}" if user else "Lead unassigned",
+            created_by_id=current_user.id,
+        )
+        db.session.add(act)
+    else:
+        case.assigned_to_id = None
+    db.session.commit()
+    flash("Lead assignment updated.", "success")
     return redirect(url_for("case_detail", case_id=case.id))
 
 
@@ -369,8 +404,13 @@ def contact_detail(contact_id):
     activities = Activity.query.filter_by(contact_id=contact.id).order_by(
         Activity.activity_date.desc()
     ).limit(50).all()
+    tasks = Task.query.filter_by(contact_id=contact.id, status="open").order_by(
+        Task.due_date.asc().nullslast()
+    ).all()
+    users = User.query.filter_by(is_active=True).order_by(User.name).all()
     return render_template(
         "contact_detail.html", contact=contact, activities=activities,
+        tasks=tasks, users=users,
     )
 
 
@@ -475,7 +515,12 @@ def transaction_detail(txn_id):
     activities = Activity.query.filter_by(transaction_id=txn.id).order_by(
         Activity.activity_date.desc()
     ).limit(50).all()
-    return render_template("transaction_detail.html", txn=txn, activities=activities)
+    tasks = Task.query.filter_by(transaction_id=txn.id, status="open").order_by(
+        Task.due_date.asc().nullslast()
+    ).all()
+    users = User.query.filter_by(is_active=True).order_by(User.name).all()
+    return render_template("transaction_detail.html", txn=txn, activities=activities,
+                           tasks=tasks, users=users)
 
 
 @app.route("/transaction/<int:txn_id>/notes", methods=["POST"])
@@ -729,6 +774,12 @@ def init_db():
         case_cols = [c["name"] for c in inspector.get_columns("cases")]
         if "lead_type" not in case_cols:
             conn.execute(text("ALTER TABLE cases ADD COLUMN lead_type VARCHAR(40) DEFAULT 'Foreclosure'"))
+            conn.commit()
+
+        # Add assigned_to_id to cases if missing
+        if "assigned_to_id" not in case_cols:
+            conn.execute(text("ALTER TABLE cases ADD COLUMN assigned_to_id INTEGER REFERENCES users(id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cases_assigned_to_id ON cases (assigned_to_id)"))
             conn.commit()
 
         # Make docket_number nullable if it has a NOT NULL constraint

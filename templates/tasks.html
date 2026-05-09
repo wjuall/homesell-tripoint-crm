@@ -5,8 +5,11 @@
 <div class="page-header d-flex align-items-center justify-content-between">
     <h1>Tasks</h1>
     <div class="d-flex gap-2">
-        <a href="{{ url_for('tasks_list') }}" class="btn btn-sm {% if not show_completed %}btn-primary{% else %}btn-outline-secondary{% endif %}">Open</a>
-        <a href="{{ url_for('tasks_list', completed='1') }}" class="btn btn-sm {% if show_completed %}btn-primary{% else %}btn-outline-secondary{% endif %}">Completed</a>
+        <a href="{{ url_for('tasks_list', user=current_user.id, completed=('1' if show_completed else '')) }}" class="btn btn-sm {% if filter_user == current_user.id|string %}btn-primary{% else %}btn-outline-secondary{% endif %}">My Tasks</a>
+        <a href="{{ url_for('tasks_list', completed=('1' if show_completed else '')) }}" class="btn btn-sm {% if not filter_user %}btn-primary{% else %}btn-outline-secondary{% endif %}">All Tasks</a>
+        <span class="border-start mx-1"></span>
+        <a href="{{ url_for('tasks_list', user=filter_user) }}" class="btn btn-sm {% if not show_completed %}btn-primary{% else %}btn-outline-secondary{% endif %}">Open</a>
+        <a href="{{ url_for('tasks_list', completed='1', user=filter_user) }}" class="btn btn-sm {% if show_completed %}btn-primary{% else %}btn-outline-secondary{% endif %}">Completed</a>
     </div>
 </div>
 

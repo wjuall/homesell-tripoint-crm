@@ -45,10 +45,12 @@ class Case(db.Model):
     date_closed = db.Column(db.Date)
     source = db.Column(db.String(30))
     notes = db.Column(db.Text)
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey("users.id"), index=True)
     # SF import fields
     sf_case_id = db.Column(db.String(18))
     sf_account_id = db.Column(db.String(18))
 
+    assigned_to = db.relationship("User", backref="cases")
     contacts = db.relationship("Contact", backref="case", lazy="dynamic")
     activities = db.relationship("Activity", backref="case", lazy="dynamic")
 
