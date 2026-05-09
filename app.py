@@ -897,6 +897,76 @@ def admin_import_sf():
         """
 
 
+@app.route("/admin/import-tasks", methods=["GET", "POST"])
+@login_required
+@admin_required
+def admin_import_tasks():
+    """Import SF Task Report as activities/tasks. Admin only."""
+    activity_count = Activity.query.count()
+    task_count = Task.query.count()
+
+    if request.method == "GET":
+        return f"""
+        <html><head><title>SF Task Import</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head><body class="bg-light p-5">
+        <div class="container" style="max-width:600px;">
+        <h2>Salesforce Task/Activity Import</h2>
+        <div class="alert alert-info">
+            <strong>Current data:</strong> {activity_count} activities, {task_count} tasks
+        </div>
+        <p>This will import activity history from the SF Task Report:</p>
+        <ul>
+            <li>Completed tasks → Activity records (calls, emails, follow-ups, etc.)</li>
+            <li>Open tasks → CRM Tasks (assigned to Warren or Manny)</li>
+            <li>Only imports records matching existing CRM leads/transactions</li>
+            <li>Excludes Danica's records</li>
+            <li>Skips duplicates if run again</li>
+        </ul>
+        <form method="POST">
+            <button type="submit" class="btn btn-primary btn-lg">Run Task Import</button>
+            <a href="/" class="btn btn-outline-secondary btn-lg ms-2">Cancel</a>
+        </form>
+        </div></body></html>
+        """
+
+    import io, sys
+    from import_selective import run_task_import
+
+    sf_dir = os.path.join(os.path.dirname(__file__), "sf_data")
+    output = io.StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = output
+
+    try:
+        run_task_import(db.session, sf_dir)
+        sys.stdout = old_stdout
+        log = output.getvalue()
+        return f"""
+        <html><head><title>Task Import Complete</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head><body class="bg-light p-5">
+        <div class="container" style="max-width:700px;">
+        <h2 class="text-success">Task Import Complete!</h2>
+        <pre style="background:#1e293b;color:#e2e8f0;padding:20px;border-radius:8px;font-size:0.85rem;">{log}</pre>
+        <a href="/" class="btn btn-primary btn-lg mt-3">Go to Dashboard</a>
+        </div></body></html>
+        """
+    except Exception as e:
+        sys.stdout = old_stdout
+        log = output.getvalue()
+        return f"""
+        <html><head><title>Task Import Error</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head><body class="bg-light p-5">
+        <div class="container" style="max-width:700px;">
+        <h2 class="text-danger">Task Import Error</h2>
+        <pre style="background:#1e293b;color:#e2e8f0;padding:20px;border-radius:8px;">{log}\n\nERROR: {e}</pre>
+        <a href="/" class="btn btn-outline-secondary btn-lg mt-3">Back to Dashboard</a>
+        </div></body></html>
+        """
+
+
 with app.app_context():
     init_db()
 

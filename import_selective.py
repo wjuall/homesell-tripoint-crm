@@ -433,6 +433,209 @@ def seed_hot_leads(session):
     print(f"  Hot leads seeded: {created}")
 
 
+def run_task_import(session, sf_dir="sf_export"):
+    """Import SF Task Report CSV as Activity records, matching to existing CRM records."""
+    from models import Case, Contact, Transaction, Activity, Task, User
+
+    task_file = os.path.join(sf_dir, "Task_Report.csv")
+    if not os.path.exists(task_file):
+        print("ERROR: Task_Report.csv not found in sf_data/")
+        return
+
+    print("=" * 60)
+    print("SALESFORCE TASK/ACTIVITY IMPORT")
+    print("=" * 60)
+
+    # Build lookup: Opportunity name → (case_id, transaction_id)
+    # Match via Case.address or Transaction.name against SF Opportunity name
+    opp_to_record = {}
+
+    all_cases = Case.query.all()
+    for c in all_cases:
+        if c.address:
+            opp_to_record[c.address.strip()] = {"case_id": c.id, "txn_id": None}
+
+    all_txns = Transaction.query.all()
+    for t in all_txns:
+        key = t.name.strip() if t.name else None
+        if key:
+            opp_to_record[key] = {"case_id": t.case_id, "txn_id": t.id}
+        # Also match by property_address
+        if t.property_address:
+            opp_to_record[t.property_address.strip()] = {"case_id": t.case_id, "txn_id": t.id}
+
+    # Also build lookup from SF Opportunity.csv Name → Account address for broader matching
+    opp_csv = os.path.join(sf_dir, "Opportunity.csv")
+    sf_opp_names = set()
+    if os.path.exists(opp_csv):
+        with open_csv(opp_csv) as f:
+            for row in csv.DictReader(f):
+                sf_opp_names.add(row.get("Name", "").strip())
+
+    # Build contact lookup: name → contact_id (for matching Contact column)
+    contact_lookup = {}
+    all_contacts = Contact.query.all()
+    for c in all_contacts:
+        if c.name:
+            contact_lookup[c.name.strip().lower()] = c.id
+
+    # Build user lookup
+    users = User.query.all()
+    user_lookup = {}
+    for u in users:
+        user_lookup[u.name.strip().lower()] = u.id
+        # Also match by first name
+        user_lookup[u.name.split()[0].strip().lower()] = u.id
+
+    print(f"  CRM records to match: {len(opp_to_record)} addresses")
+    print(f"  CRM contacts to match: {len(contact_lookup)} names")
+    print(f"  CRM users: {list(u.name for u in users)}")
+
+    # Read task report
+    with open(task_file, encoding="latin-1") as f:
+        reader = csv.DictReader(f)
+        all_rows = [r for r in reader if r.get("Date") and r["Date"][0].isdigit()]
+
+    print(f"  Total task rows in export: {len(all_rows)}")
+
+    # Filter out Danica
+    rows = [r for r in all_rows if "Danica" not in r.get("Assigned", "")]
+    print(f"  After excluding Danica: {len(rows)}")
+
+    imported_activities = 0
+    imported_tasks = 0
+    skipped_no_match = 0
+    skipped_duplicate = 0
+
+    for row in rows:
+        opp_name = row.get("Opportunity", "").strip()
+        acct_name = row.get("Company / Account", "").strip()
+        contact_name = row.get("Contact", "").strip()
+        subject = row.get("Subject", "").strip()
+        assigned = row.get("Assigned", "").strip()
+        status = row.get("Status", "").strip()
+        priority = row.get("Priority", "").strip()
+        date_str = row.get("Date", "")
+        comments = row.get("Full Comments", "").strip() or row.get("Comments", "").strip()
+
+        if not subject:
+            continue
+
+        # Match to CRM record — try Opportunity name first, then Account name
+        record = opp_to_record.get(opp_name) or opp_to_record.get(acct_name)
+        if not record:
+            skipped_no_match += 1
+            continue
+
+        case_id = record.get("case_id")
+        txn_id = record.get("txn_id")
+
+        # Match contact
+        contact_id = None
+        if contact_name:
+            contact_id = contact_lookup.get(contact_name.strip().lower())
+
+        # Match assignee
+        assigned_user_id = None
+        if assigned:
+            assigned_user_id = user_lookup.get(assigned.strip().lower())
+
+        # Parse date
+        activity_date = None
+        if date_str:
+            for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+                try:
+                    activity_date = datetime.strptime(date_str.strip(), fmt)
+                    break
+                except ValueError:
+                    continue
+
+        # Check for duplicate — same subject + date + case/txn
+        existing = Activity.query.filter_by(
+            subject=subject,
+            case_id=case_id,
+            transaction_id=txn_id,
+        )
+        if activity_date:
+            existing = existing.filter(
+                Activity.activity_date >= activity_date.replace(hour=0, minute=0),
+                Activity.activity_date <= activity_date.replace(hour=23, minute=59),
+            )
+        if existing.first():
+            skipped_duplicate += 1
+            continue
+
+        # Determine activity type from subject
+        subj_lower = subject.lower()
+        if any(k in subj_lower for k in ["call", "spoke", "vm", "voicemail", "missed call"]):
+            act_type = "call"
+        elif any(k in subj_lower for k in ["sms", "text", "incoming sms"]):
+            act_type = "sms"
+        elif any(k in subj_lower for k in ["email", "re:", "fwd:"]):
+            act_type = "email"
+        elif any(k in subj_lower for k in ["meeting", "appointment", "inspection", "walkthrough"]):
+            act_type = "meeting"
+        elif any(k in subj_lower for k in ["letter", "mail"]):
+            act_type = "letter"
+        else:
+            act_type = "task"
+
+        # Determine direction
+        direction = None
+        if any(k in subj_lower for k in ["incoming", "inbound", "received"]):
+            direction = "inbound"
+        elif any(k in subj_lower for k in ["outgoing", "outbound", "sent"]):
+            direction = "outbound"
+
+        # Import as Activity (completed) or keep as open Task
+        if status == "Open":
+            # Create as CRM Task
+            task = Task(
+                title=subject,
+                description=comments or None,
+                priority="high" if priority == "High" else "normal",
+                status="open",
+                due_date=activity_date.date() if activity_date else None,
+                assigned_to_id=assigned_user_id,
+                case_id=case_id,
+                contact_id=contact_id,
+                transaction_id=txn_id,
+                created_at=activity_date or datetime.utcnow(),
+            )
+            session.add(task)
+            imported_tasks += 1
+        else:
+            # Create as Activity
+            act = Activity(
+                case_id=case_id,
+                transaction_id=txn_id,
+                contact_id=contact_id,
+                activity_type=act_type,
+                subject=subject,
+                description=comments or None,
+                direction=direction,
+                status="completed",
+                activity_date=activity_date or datetime.utcnow(),
+                created_by_id=assigned_user_id,
+                sf_task_id=f"report-{date_str}-{subject[:30]}",
+            )
+            session.add(act)
+            imported_activities += 1
+
+        if (imported_activities + imported_tasks) % 200 == 0:
+            session.flush()
+
+    session.commit()
+
+    print(f"\n  Activities imported: {imported_activities}")
+    print(f"  Open tasks imported: {imported_tasks}")
+    print(f"  Skipped (no CRM match): {skipped_no_match}")
+    print(f"  Skipped (duplicate): {skipped_duplicate}")
+    print("=" * 60)
+    print("TASK IMPORT COMPLETE!")
+    print("=" * 60)
+
+
 if __name__ == "__main__":
     sf_dir = sys.argv[1] if len(sys.argv) > 1 else "sf_export"
 
