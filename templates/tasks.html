@@ -79,9 +79,50 @@
                         {% endif %}
                     </td>
                     <td>
-                        <div class="{% if task.status == 'completed' %}text-decoration-line-through{% endif %}" style="font-size:0.9rem;">{{ task.title }}</div>
+                        <div class="d-flex align-items-center">
+                            <div class="{% if task.status == 'completed' %}text-decoration-line-through{% endif %} flex-grow-1" style="font-size:0.9rem;">{{ task.title }}</div>
+                            {% if task.status == 'open' %}
+                            <button class="btn btn-sm btn-link text-muted p-0 ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#editTask{{ task.id }}" title="Edit"><i class="bi bi-pencil-square"></i></button>
+                            <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" class="ms-1" style="display:inline;" onsubmit="return confirm('Delete this task?')">
+                                <input type="hidden" name="next" value="{{ request.url }}">
+                                <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Delete"><i class="bi bi-trash"></i></button>
+                            </form>
+                            {% endif %}
+                        </div>
                         {% if task.description %}
                         <div style="font-size:0.75rem;color:#94a3b8;">{{ task.description[:100] }}</div>
+                        {% endif %}
+                        {% if task.status == 'open' %}
+                        <div class="collapse mt-2" id="editTask{{ task.id }}">
+                            <form method="POST" action="{{ url_for('update_task', task_id=task.id) }}">
+                                <input type="hidden" name="next" value="{{ request.url }}">
+                                <div class="row g-1">
+                                    <div class="col-4">
+                                        <input type="text" name="title" class="form-control form-control-sm" value="{{ task.title }}" required>
+                                    </div>
+                                    <div class="col-2">
+                                        <input type="date" name="due_date" class="form-control form-control-sm" value="{{ task.due_date.isoformat() if task.due_date else '' }}">
+                                    </div>
+                                    <div class="col-2">
+                                        <select name="assigned_to_id" class="form-select form-select-sm">
+                                            {% for u in users %}
+                                            <option value="{{ u.id }}" {% if task.assigned_to_id == u.id %}selected{% endif %}>{{ u.name.split(' ')[0] }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-2">
+                                        <select name="priority" class="form-select form-select-sm">
+                                            <option value="normal" {% if task.priority == 'normal' %}selected{% endif %}>Normal</option>
+                                            <option value="high" {% if task.priority == 'high' %}selected{% endif %}>High</option>
+                                            <option value="low" {% if task.priority == 'low' %}selected{% endif %}>Low</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-2">
+                                        <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
                         {% endif %}
                     </td>
                     <td>
