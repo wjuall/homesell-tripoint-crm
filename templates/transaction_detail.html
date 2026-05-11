@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ txn.name }} — TriPoint CRM{% endblock %}
+{% block title %}{{ txn.name }} â TriPoint CRM{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -163,17 +163,53 @@
                     </div>
                 </form>
                 {% for task in tasks %}
-                <div class="d-flex align-items-start mb-2 pb-2 {% if not loop.last %}border-bottom{% endif %}">
-                    <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" class="me-2" style="margin-top:2px;">
-                        <input type="hidden" name="next" value="{{ url_for('transaction_detail', txn_id=txn.id) }}">
-                        <button type="submit" class="btn btn-sm btn-outline-success p-0 px-1" title="Complete"><i class="bi bi-check-lg"></i></button>
-                    </form>
-                    <div>
-                        <div style="font-size:0.85rem;" class="{% if task.priority == 'high' %}fw-bold text-danger{% endif %}">{{ task.title }}</div>
-                        <div style="font-size:0.7rem;color:#94a3b8;">
-                            {% if task.due_date %}<span class="{% if task.due_date < now.date() %}text-danger{% endif %}">Due {{ task.due_date.strftime('%b %d') }}</span> — {% endif %}
-                            {{ task.assigned_to.name.split(' ')[0] if task.assigned_to else '' }}
-                        </div>
+                <div class="mb-2 pb-2 {% if not loop.last %}border-bottom{% endif %}">
+                    <div class="d-flex align-items-center mb-1">
+                        <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" class="me-1">
+                            <input type="hidden" name="next" value="{{ url_for('transaction_detail', txn_id=txn.id) }}">
+                            <button type="submit" class="btn btn-sm btn-outline-success p-0 px-1" title="Complete"><i class="bi bi-check-lg"></i></button>
+                        </form>
+                        <div style="font-size:0.85rem;flex:1;" class="{% if task.priority == 'high' %}fw-bold text-danger{% endif %}">{{ task.title }}</div>
+                        <button class="btn btn-sm btn-link text-muted p-0 ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#editTask{{ task.id }}" title="Edit"><i class="bi bi-pencil-square"></i></button>
+                        <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" class="ms-1" onsubmit="return confirm('Delete this task?')">
+                            <input type="hidden" name="next" value="{{ url_for('transaction_detail', txn_id=txn.id) }}">
+                            <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Delete"><i class="bi bi-trash"></i></button>
+                        </form>
+                    </div>
+                    <div style="font-size:0.7rem;color:#94a3b8;">
+                        {% if task.due_date %}<span class="{% if task.due_date < now.date() %}text-danger{% endif %}">Due {{ task.due_date.strftime('%b %d') }}</span> â {% endif %}
+                        {{ task.assigned_to.name.split(' ')[0] if task.assigned_to else '' }}
+                    </div>
+                    <div class="collapse mt-2" id="editTask{{ task.id }}">
+                        <form method="POST" action="{{ url_for('update_task', task_id=task.id) }}">
+                            <input type="hidden" name="next" value="{{ url_for('transaction_detail', txn_id=txn.id) }}">
+                            <div class="row g-1 mb-1">
+                                <div class="col-12">
+                                    <input type="text" name="title" class="form-control form-control-sm" value="{{ task.title }}" required>
+                                </div>
+                            </div>
+                            <div class="row g-1">
+                                <div class="col-4">
+                                    <input type="date" name="due_date" class="form-control form-control-sm" value="{{ task.due_date.isoformat() if task.due_date else '' }}">
+                                </div>
+                                <div class="col-3">
+                                    <select name="assigned_to_id" class="form-select form-select-sm">
+                                        {% for u in users %}
+                                        <option value="{{ u.id }}" {% if task.assigned_to_id == u.id %}selected{% endif %}>{{ u.name.split(' ')[0] }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-3">
+                                    <select name="priority" class="form-select form-select-sm">
+                                        <option value="normal" {% if task.priority == 'normal' %}selected{% endif %}>Normal</option>
+                                        <option value="high" {% if task.priority == 'high' %}selected{% endif %}>High</option>
+                                    </select>
+                                </div>
+                                <div class="col-2">
+                                    <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+                                </div>
+                            </div>
+                        </form>
                     </div>
                 </div>
                 {% else %}
