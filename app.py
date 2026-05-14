@@ -760,6 +760,36 @@ def reopen_task(task_id):
     return redirect(url_for("tasks_list", completed="1"))
 
 
+@app.route("/tasks/<int:task_id>/update", methods=["POST"])
+@login_required
+def update_task(task_id):
+    task = db.session.get(Task, task_id) or abort(404)
+    title = request.form.get("title", "").strip()
+    if title:
+        task.title = title
+    due_date_str = request.form.get("due_date", "").strip()
+    task.due_date = date.fromisoformat(due_date_str) if due_date_str else None
+    assignee_id = request.form.get("assigned_to_id")
+    task.assigned_to_id = int(assignee_id) if assignee_id else None
+    priority = request.form.get("priority", "normal")
+    task.priority = priority
+    db.session.commit()
+    flash("Task updated.", "success")
+    next_url = request.form.get("next") or url_for("tasks_list")
+    return redirect(next_url)
+
+
+@app.route("/tasks/<int:task_id>/delete", methods=["POST"])
+@login_required
+def delete_task(task_id):
+    task = db.session.get(Task, task_id) or abort(404)
+    db.session.delete(task)
+    db.session.commit()
+    flash("Task deleted.", "success")
+    next_url = request.form.get("next") or url_for("tasks_list")
+    return redirect(next_url)
+
+
 # ── Settings / User Management ───────────────────────────────────────────────
 
 @app.route("/settings")

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ txn.name }} — TriPoint CRM{% endblock %}
+{% block title %}{{ txn.name }} â TriPoint CRM{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -177,7 +177,7 @@
                         </form>
                     </div>
                     <div style="font-size:0.7rem;color:#94a3b8;">
-                        {% if task.due_date %}<span class="{% if task.due_date < now.date() %}text-danger{% endif %}">Due {{ task.due_date.strftime('%b %d') }}</span> — {% endif %}
+                        {% if task.due_date %}<span class="{% if task.due_date < now.date() %}text-danger{% endif %}">Due {{ task.due_date.strftime('%b %d') }}</span> â {% endif %}
                         {{ task.assigned_to.name.split(' ')[0] if task.assigned_to else '' }}
                     </div>
                     <div class="collapse mt-2" id="editTask{{ task.id }}">
