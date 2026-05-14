@@ -1264,4 +1264,26 @@ def admin_fix_sale_dates():
 
     elif action == "fix_statuses":
         # Update status for cases with valid future sale dates
-        for c in
+        for c in mismatched:
+            old = c.status
+            c.status = "Sale Date Set"
+            c.status_date = date.today()
+            act = Activity(
+                case_id=c.id, activity_type="note",
+                subject=f"Status auto-updated: {old} → Sale Date Set (has sale date {c.sale_date.strftime('%b %d, %Y')})",
+                created_by_id=current_user.id,
+            )
+            db.session.add(act)
+            fixed += 1
+
+    db.session.commit()
+    flash(f"Fixed {fixed} records.", "success")
+    return redirect(url_for("admin_fix_sale_dates"))
+
+
+with app.app_context():
+    init_db()
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
