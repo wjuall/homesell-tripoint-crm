@@ -129,6 +129,11 @@ def dashboard():
     closed_count = Case.query.filter(Case.date_closed.isnot(None)).count()
 
     # Hot leads (dnc=False or NULL)
+    hot_lead_filter = db.and_(
+        Contact.response_status.in_(["interested", "needs_help"]),
+        db.or_(Contact.dnc == False, Contact.dnc.is_(None))
+    )
+    hot_lead_count = Contact.query.filter(hot_lead_filter).count()
     hot_leads = Contact.query.filter(
         Contact.response_status.in_(["interested", "needs_help"]),
         db.or_(Contact.dnc == False, Contact.dnc.is_(None))
@@ -159,6 +164,7 @@ def dashboard():
         total_active=total_active,
         closed_count=closed_count,
         hot_leads=hot_leads,
+        hot_lead_count=hot_lead_count,
         recent=recent,
         active_txns=active_txns,
         upcoming_sales=upcoming_sales,
@@ -1258,65 +1264,4 @@ def admin_fix_sale_dates():
 
     elif action == "fix_statuses":
         # Update status for cases with valid future sale dates
-        for c in mismatched:
-            old = c.status
-            c.status = "Sale Date Set"
-            c.status_date = date.today()
-            act = Activity(
-                case_id=c.id, activity_type="note",
-                subject=f"Status auto-updated: {old} → Sale Date Set (has sale date {c.sale_date.strftime('%b %d, %Y')})",
-                created_by_id=current_user.id,
-            )
-            db.session.add(act)
-            fixed += 1
-
-    db.session.commit()
-    flash(f"Fixed {fixed} records.", "success")
-    return redirect(url_for("admin_fix_sale_dates"))
-
-
-@app.route("/admin/batch-update", methods=["GET", "POST"])
-@login_required
-def admin_batch_update():
-    """Batch update cases — assign user and/or set lead type by address match."""
-    if request.method == "POST":
-        import json
-        updates = json.loads(request.form.get("updates", "[]"))
-        results = []
-        for u in updates:
-            addr = u.get("address", "")
-            case = Case.query.filter(Case.address.ilike(f"%{addr}%")).first()
-            if not case:
-                results.append(f"NOT FOUND: {addr}")
-                continue
-            changes = []
-            if "assigned_to_id" in u and u["assigned_to_id"] is not None:
-                case.assigned_to_id = int(u["assigned_to_id"])
-                changes.append(f"assigned→{u['assigned_to_id']}")
-            if "lead_type" in u and u["lead_type"]:
-                case.lead_type = u["lead_type"]
-                changes.append(f"lead_type→{u['lead_type']}")
-            results.append(f"UPDATED #{case.id} {case.address}: {', '.join(changes)}")
-        db.session.commit()
-        return jsonify({"results": results})
-
-    return """
-    <html><head><title>Batch Update</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    </head><body class="bg-light p-5">
-    <div class="container" style="max-width:800px;">
-    <h2>Batch Update Cases</h2>
-    <form method="POST">
-    <textarea name="updates" class="form-control mb-3" rows="10" placeholder='[{"address":"118 Main","assigned_to_id":1},...]'></textarea>
-    <button class="btn btn-primary">Run Updates</button>
-    </form>
-    </div></body></html>
-    """
-
-
-with app.app_context():
-    init_db()
-
-
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+        for c in
