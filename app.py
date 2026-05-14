@@ -128,10 +128,11 @@ def dashboard():
     total_active = sum(pipeline_counts.values())
     closed_count = Case.query.filter(Case.date_closed.isnot(None)).count()
 
-    # Hot leads
+    # Hot leads (dnc=False or NULL)
     hot_leads = Contact.query.filter(
-        Contact.response_status.in_(["interested", "needs_help"])
-    ).filter_by(dnc=False).order_by(Contact.date_added.desc()).limit(10).all()
+        Contact.response_status.in_(["interested", "needs_help"]),
+        db.or_(Contact.dnc == False, Contact.dnc.is_(None))
+    ).order_by(Contact.date_added.desc()).limit(10).all()
 
     # Recent activity
     recent = Activity.query.order_by(Activity.activity_date.desc()).limit(15).all()
@@ -673,12 +674,14 @@ def edit_transaction(txn_id):
 @app.route("/leads")
 @login_required
 def leads():
-    interested = Contact.query.filter_by(
-        response_status="interested", dnc=False
+    interested = Contact.query.filter(
+        Contact.response_status == "interested",
+        db.or_(Contact.dnc == False, Contact.dnc.is_(None))
     ).order_by(Contact.date_added.desc()).all()
 
-    needs_help = Contact.query.filter_by(
-        response_status="needs_help", dnc=False
+    needs_help = Contact.query.filter(
+        Contact.response_status == "needs_help",
+        db.or_(Contact.dnc == False, Contact.dnc.is_(None))
     ).order_by(Contact.date_added.desc()).all()
 
     return render_template("leads.html", interested=interested, needs_help=needs_help)
@@ -1240,6 +1243,45 @@ def admin_fix_sale_dates():
     db.session.commit()
     flash(f"Fixed {fixed} records.", "success")
     return redirect(url_for("admin_fix_sale_dates"))
+
+
+@app.route("/admin/batch-update", methods=["GET", "POST"])
+@login_required
+def admin_batch_update():
+    """Batch update cases — assign user and/or set lead type by address match."""
+    if request.method == "POST":
+        import json
+        updates = json.loads(request.form.get("updates", "[]"))
+        results = []
+        for u in updates:
+            addr = u.get("address", "")
+            case = Case.query.filter(Case.address.ilike(f"%{addr}%")).first()
+            if not case:
+                results.append(f"NOT FOUND: {addr}")
+                continue
+            changes = []
+            if "assigned_to_id" in u and u["assigned_to_id"] is not None:
+                case.assigned_to_id = int(u["assigned_to_id"])
+                changes.append(f"assigned→{u['assigned_to_id']}")
+            if "lead_type" in u and u["lead_type"]:
+                case.lead_type = u["lead_type"]
+                changes.append(f"lead_type→{u['lead_type']}")
+            results.append(f"UPDATED #{case.id} {case.address}: {', '.join(changes)}")
+        db.session.commit()
+        return jsonify({"results": results})
+
+    return """
+    <html><head><title>Batch Update</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    </head><body class="bg-light p-5">
+    <div class="container" style="max-width:800px;">
+    <h2>Batch Update Cases</h2>
+    <form method="POST">
+    <textarea name="updates" class="form-control mb-3" rows="10" placeholder='[{"address":"118 Main","assigned_to_id":1},...]'></textarea>
+    <button class="btn btn-primary">Run Updates</button>
+    </form>
+    </div></body></html>
+    """
 
 
 with app.app_context():
