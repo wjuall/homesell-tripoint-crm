@@ -70,19 +70,56 @@
         </div>
         {% endif %}
 
-        {% if txn.contact %}
         <div class="card card-custom mb-3">
             <div class="card-body">
                 <h6 class="fw-bold mb-2">Contact</h6>
+                {% if txn.contact %}
                 <a href="{{ url_for('contact_detail', contact_id=txn.contact.id) }}" class="text-decoration-none">
                     {{ txn.contact.name }}
                 </a>
                 {% if txn.contact.primary_phone %}
                 <div style="font-size:0.8rem;color:#64748b;"><i class="bi bi-phone"></i> {{ txn.contact.primary_phone }}</div>
                 {% endif %}
+                {% if txn.contact.email %}
+                <div style="font-size:0.8rem;color:#64748b;"><i class="bi bi-envelope"></i> {{ txn.contact.email }}</div>
+                {% endif %}
+                <form method="POST" action="{{ url_for('unlink_transaction_contact', txn_id=txn.id) }}" class="mt-2">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Unlink this contact from the transaction?')">Unlink Contact</button>
+                </form>
+                {% else %}
+                <p class="text-muted mb-2" style="font-size:0.8rem;">No contact linked to this transaction.</p>
+                <!-- Link existing contact -->
+                <button class="btn btn-sm btn-outline-primary mb-2 w-100" type="button" data-bs-toggle="collapse" data-bs-target="#linkExistingContact">
+                    <i class="bi bi-link-45deg"></i> Link Existing Contact
+                </button>
+                <div class="collapse mb-2" id="linkExistingContact">
+                    <form method="POST" action="{{ url_for('link_transaction_contact', txn_id=txn.id) }}">
+                        <input type="hidden" name="action" value="link">
+                        <select name="contact_id" class="form-select form-select-sm mb-2" required>
+                            <option value="">Select a contact...</option>
+                            {% for c in all_contacts %}
+                            <option value="{{ c.id }}">{{ c.name }}{% if c.primary_phone %} — {{ c.primary_phone }}{% endif %}{% if c.case %} ({{ c.case.town }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-primary w-100">Link</button>
+                    </form>
+                </div>
+                <!-- Create new contact -->
+                <button class="btn btn-sm btn-outline-success w-100" type="button" data-bs-toggle="collapse" data-bs-target="#createNewContact">
+                    <i class="bi bi-person-plus"></i> Create New Contact
+                </button>
+                <div class="collapse mt-2" id="createNewContact">
+                    <form method="POST" action="{{ url_for('link_transaction_contact', txn_id=txn.id) }}">
+                        <input type="hidden" name="action" value="create">
+                        <input type="text" name="name" class="form-control form-control-sm mb-1" placeholder="Full name" required>
+                        <input type="text" name="primary_phone" class="form-control form-control-sm mb-1" placeholder="Phone number">
+                        <input type="email" name="email" class="form-control form-control-sm mb-1" placeholder="Email">
+                        <button type="submit" class="btn btn-sm btn-success w-100">Create & Link</button>
+                    </form>
+                </div>
+                {% endif %}
             </div>
         </div>
-        {% endif %}
 
         <div class="card card-custom">
             <div class="card-body">
@@ -235,12 +272,4 @@
                             </div>
                         </div>
                     </div>
-                    {% else %}
-                    <p class="text-muted" style="font-size:0.85rem;">No activity yet.</p>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
+ 

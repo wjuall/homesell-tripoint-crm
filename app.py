@@ -604,8 +604,12 @@ def transaction_detail(txn_id):
         Task.due_date.asc().nullslast()
     ).all()
     users = User.query.filter_by(is_active=True).order_by(User.name).all()
+    # If no contact linked, provide list of contacts for linking
+    all_contacts = []
+    if not txn.contact_id:
+        all_contacts = Contact.query.order_by(Contact.name).all()
     return render_template("transaction_detail.html", txn=txn, activities=activities,
-                           tasks=tasks, users=users)
+                           tasks=tasks, users=users, all_contacts=all_contacts)
 
 
 @app.route("/transaction/<int:txn_id>/notes", methods=["POST"])
@@ -615,6 +619,77 @@ def update_transaction_notes(txn_id):
     txn.notes = request.form.get("notes", "").strip() or None
     db.session.commit()
     flash("Notes saved.", "success")
+    return redirect(url_for("transaction_detail", txn_id=txn.id))
+
+
+@app.route("/transaction/<int:txn_id>/link-contact", methods=["POST"])
+@login_required
+def link_transaction_contact(txn_id):
+    txn = db.session.get(Transaction, txn_id) or abort(404)
+    action = request.form.get("action")
+
+    if action == "link":
+        contact_id = request.form.get("contact_id", type=int)
+        if contact_id:
+            contact = db.session.get(Contact, contact_id)
+            if contact:
+                txn.contact_id = contact.id
+                act = Activity(
+                    transaction_id=txn.id, activity_type="note",
+                    subject=f"Contact linked: {contact.name}",
+                    created_by_id=current_user.id,
+                )
+                db.session.add(act)
+                db.session.commit()
+                flash(f"Linked {contact.name} to transaction.", "success")
+            else:
+                flash("Contact not found.", "danger")
+        else:
+            flash("No contact selected.", "warning")
+
+    elif action == "create":
+        name = request.form.get("name", "").strip()
+        phone = request.form.get("primary_phone", "").strip() or None
+        email = request.form.get("email", "").strip() or None
+        if name:
+            contact = Contact(
+                name=name,
+                primary_phone=phone,
+                email=email,
+                case_id=txn.case_id,
+                date_added=date.today(),
+            )
+            db.session.add(contact)
+            db.session.flush()
+            txn.contact_id = contact.id
+            act = Activity(
+                transaction_id=txn.id, activity_type="note",
+                subject=f"Contact created and linked: {name}",
+                created_by_id=current_user.id,
+            )
+            db.session.add(act)
+            db.session.commit()
+            flash(f"Created and linked {name}.", "success")
+        else:
+            flash("Name is required.", "warning")
+
+    return redirect(url_for("transaction_detail", txn_id=txn.id))
+
+
+@app.route("/transaction/<int:txn_id>/unlink-contact", methods=["POST"])
+@login_required
+def unlink_transaction_contact(txn_id):
+    txn = db.session.get(Transaction, txn_id) or abort(404)
+    old_name = txn.contact.name if txn.contact else "Unknown"
+    txn.contact_id = None
+    act = Activity(
+        transaction_id=txn.id, activity_type="note",
+        subject=f"Contact unlinked: {old_name}",
+        created_by_id=current_user.id,
+    )
+    db.session.add(act)
+    db.session.commit()
+    flash(f"Unlinked {old_name} from transaction.", "info")
     return redirect(url_for("transaction_detail", txn_id=txn.id))
 
 
